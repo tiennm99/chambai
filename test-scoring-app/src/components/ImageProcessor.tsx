@@ -184,7 +184,8 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
     originalCanvas: HTMLCanvasElement,
     bubbles: Bubble[],
     detectedAnswers: ProcessingResult,
-    testConfig: TestConfig
+    testConfig: TestConfig,
+    gray: OpenCVMat
   ): string => {
     console.log('🎯 Creating debug visualization with:', {
       totalBubbles: bubbles.length,
@@ -259,36 +260,58 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
       }
     });
     
-    // Mark student ID bubbles (blue circles)
+    // Mark student ID bubbles (blue circles) with confidence levels
     const idBubbles = bubbles.filter(b => b.section === 'studentId');
     console.log('🔵 Student ID bubbles found:', idBubbles.length);
     idBubbles.forEach(bubble => {
-      debugCtx.strokeStyle = '#3B82F6'; // Blue
-      debugCtx.lineWidth = 4;
+      // Get fill confidence for this bubble
+      const confidence = isBubbleFilled(bubble, gray);
+      
+      // Use gradient color based on confidence
+      const alpha = Math.min(1.0, confidence * 2); // Scale alpha based on confidence
+      debugCtx.strokeStyle = confidence > 0.4 ? `rgba(59, 130, 246, ${alpha})` : '#3B82F6'; // Blue
+      debugCtx.lineWidth = confidence > 0.4 ? 6 : 4;
       debugCtx.beginPath();
       debugCtx.arc(bubble.x + bubble.width/2, bubble.y + bubble.height/2, Math.max(bubble.width, bubble.height)/2 + 8, 0, 2 * Math.PI);
       debugCtx.stroke();
+      
+      // Display confidence number
+      if (confidence > 0.2) {
+        debugCtx.fillStyle = '#3B82F6';
+        debugCtx.font = '8px Arial';
+        debugCtx.fillText(confidence.toFixed(2), bubble.x + bubble.width + 5, bubble.y + bubble.height/2);
+      }
     });
     
-    // Mark Section 1 answers (A,B,C,D) - green for correct, red for wrong
+    // Mark Section 1 answers (A,B,C,D) - green for correct, red for wrong with confidence
     const section1Bubbles = bubbles.filter(b => b.section === 'section1');
     
     section1Bubbles.forEach(bubble => {
       const questionNum = bubble.question;
       const option = bubble.option;
       
+      // Get fill confidence for this bubble
+      const confidence = isBubbleFilled(bubble, gray);
+      
       if (questionNum && questionNum <= detectedAnswers.phanI.length) {
         const detectedAnswer = detectedAnswers.phanI[questionNum - 1];
         const correctAnswer = testConfig.phanI.answers[questionNum - 1];
         
-        if (detectedAnswer === option) {
+        if (detectedAnswer === option && confidence > 0.4) {
           const isCorrect = detectedAnswer === correctAnswer;
           
-          debugCtx.strokeStyle = isCorrect ? '#10B981' : '#EF4444'; // Green or Red
-          debugCtx.lineWidth = 3;
+          // Use gradient color based on confidence
+          const alpha = Math.min(1.0, confidence * 2);
+          debugCtx.strokeStyle = isCorrect ? `rgba(16, 185, 129, ${alpha})` : `rgba(239, 68, 68, ${alpha})`;
+          debugCtx.lineWidth = confidence > 0.6 ? 4 : 3;
           debugCtx.beginPath();
           debugCtx.arc(bubble.x + bubble.width/2, bubble.y + bubble.height/2, bubble.width/2 + 5, 0, 2 * Math.PI);
           debugCtx.stroke();
+          
+          // Display confidence number
+          debugCtx.fillStyle = isCorrect ? '#10B981' : '#EF4444';
+          debugCtx.font = '8px Arial';
+          debugCtx.fillText(confidence.toFixed(2), bubble.x + bubble.width + 5, bubble.y + bubble.height/2);
         }
       }
     });
@@ -394,6 +417,33 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
     };
   };
 
+  // Improved preprocessing function
+  const preprocessImage = (src: OpenCVMat): OpenCVMat => {
+    const cv = window.cv;
+    
+    // Convert to grayscale
+    const gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    
+    // Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    const clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
+    const enhanced = new cv.Mat();
+    clahe.apply(gray, enhanced);
+    
+    // Apply bilateral filter to reduce noise while keeping edges
+    const filtered = new cv.Mat();
+    cv.bilateralFilter(enhanced, filtered, 9, 75, 75);
+    
+    console.log('🎯 Image preprocessing completed: CLAHE + bilateral filtering');
+    
+    // Cleanup
+    gray.delete();
+    enhanced.delete();
+    clahe.delete();
+    
+    return filtered;
+  };
+
   const processWithOpenCV = (imageData: ImageData, originalCanvas: HTMLCanvasElement): ProcessingResult => {
     // Get test configuration for answer comparison
     const testConfig = getTestConfig();
@@ -408,9 +458,8 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
     // Create OpenCV Mat from ImageData
     const src = cv.matFromImageData(imageData);
     
-    // Convert to grayscale
-    const gray = new cv.Mat();
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    // Apply improved preprocessing
+    const gray = preprocessImage(src);
     
     // Apply adaptive threshold for bubble detection
     const thresh = new cv.Mat();
@@ -437,7 +486,7 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
     };
     
     // Create debug visualization
-    const debugUrl = createDebugVisualization(originalCanvas, bubbles, result, testConfig);
+    const debugUrl = createDebugVisualization(originalCanvas, bubbles, result, testConfig, gray);
     setDebugImageUrl(debugUrl);
     
     // Clean up OpenCV Mats
@@ -811,23 +860,50 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
     const cv = window.cv;
     
     try {
-      // Create a simple rectangle ROI and get mean intensity
-      const rect = new cv.Rect(bubble.x, bubble.y, bubble.width, bubble.height);
+      // Create ROI with smaller padding to avoid noise
+      const padding = 2;
+      const rect = new cv.Rect(
+        Math.max(0, bubble.x - padding), 
+        Math.max(0, bubble.y - padding), 
+        bubble.width + padding * 2, 
+        bubble.height + padding * 2
+      );
       const roi = gray.roi(rect);
       
-      // For simplicity, just use the mean intensity of the whole bubble area
-      const meanValue = cv.mean(roi);
+      // Apply Gaussian blur to reduce noise
+      const blurred = new cv.Mat();
+      cv.GaussianBlur(roi, blurred, new cv.Size(3, 3), 0);
+      
+      // Calculate mean intensity
+      const meanValue = cv.mean(blurred);
       const fillConfidence = 1.0 - (meanValue[0] / 255.0);
       
-      // Clean up
+      // Add standard deviation check to detect edge cases
+      const stdDev = new cv.Mat();
+      const mean = new cv.Mat();
+      cv.meanStdDev(blurred, mean, stdDev);
+      const variance = stdDev.data64F[0];
+      
+      // If variance is high, might be partially filled bubble
+      let adjustedConfidence = fillConfidence;
+      if (variance > 50) {
+        adjustedConfidence = Math.max(0.3, fillConfidence - 0.1);
+      }
+      
+      // Detailed logging for debugging
+      console.log(`🔍 Bubble at (${bubble.x}, ${bubble.y}) - Fill confidence: ${adjustedConfidence.toFixed(3)}`);
+      console.log(`📊 Mean intensity: ${meanValue[0].toFixed(2)}, Variance: ${variance.toFixed(2)}`);
+      
+      // Cleanup
       roi.delete();
+      blurred.delete();
+      stdDev.delete();
+      mean.delete();
       
-      console.log(`Bubble fill confidence: ${fillConfidence.toFixed(2)} for bubble at (${bubble.x}, ${bubble.y})`);
-      
-      return fillConfidence;
+      return adjustedConfidence;
     } catch (error) {
       console.error('Error in isBubbleFilled:', error);
-      return 0.5; // Default confidence
+      return 0.0;
     }
   };
 
@@ -857,7 +933,7 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
       if (columns[col]) {
         for (const bubble of columns[col]) {
           const confidence = isBubbleFilled(bubble, gray);
-          if (confidence > 0.6 && bubble.row !== undefined) {
+          if (confidence > 0.4 && bubble.row !== undefined) {
             studentId += bubble.row.toString();
             break;
           }
@@ -866,6 +942,8 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
     }
     
     console.log('🆔 Student ID detected:', studentId);
+    console.log('🔢 Total student ID bubbles processed:', idBubbles.length);
+    console.log('📊 Detection threshold used: 0.4');
     return studentId || 'UNKNOWN';
   };
 
@@ -896,7 +974,7 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
         
         for (const bubble of questions[q]) {
           const confidence = isBubbleFilled(bubble, gray);
-          if (confidence > bestConfidence && confidence > 0.6 && bubble.option) {
+          if (confidence > bestConfidence && confidence > 0.4 && bubble.option) {
             bestConfidence = confidence;
             bestAnswer = bubble.option;
           }
@@ -909,6 +987,9 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
     }
     
     console.log('📝 Section 1 answers detected:', answers.filter(a => a).length, 'of 40');
+    console.log('🔢 Total Section 1 bubbles processed:', section1Bubbles.length);
+    console.log('📊 Detection threshold used: 0.4');
+    console.log('🎯 Detected answers:', answers.slice(0, 10).join(', '), '...');
     return answers;
   };
 
@@ -944,7 +1025,7 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
           if (questions[q][subOpt]) {
             for (const bubble of questions[q][subOpt]) {
               const confidence = isBubbleFilled(bubble, gray);
-              if (confidence > 0.6) {
+              if (confidence > 0.4) {
                 const value = bubble.value; // true for "Đúng", false for "Sai"
                 if (value !== undefined) answer[subOpt as 'a' | 'b' | 'c' | 'd'] = value;
                 break;
@@ -988,7 +1069,7 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
         
         for (const bubble of questions[q]) {
           const confidence = isBubbleFilled(bubble, gray);
-          if (confidence > bestConfidence && confidence > 0.6) {
+          if (confidence > bestConfidence && confidence > 0.4) {
             bestConfidence = confidence;
             bestAnswer = bubble.digit?.toString() || '';
           }
