@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import ImageProcessor from './ImageProcessor';
 
 interface ProcessedResult {
   id: string;
@@ -10,12 +11,14 @@ interface ProcessedResult {
   phanII: Array<{ a: boolean; b: boolean; c: boolean; d: boolean }>;
   phanIII: string[];
   processed: boolean;
+  debugImageUrl?: string;
 }
 
 export default function UploadPage() {
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [processedResults, setProcessedResults] = useState<ProcessedResult[]>([]);
   const [processing, setProcessing] = useState(false);
+  const [currentProcessingImage, setCurrentProcessingImage] = useState<File | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -68,75 +71,70 @@ export default function UploadPage() {
     }
 
     setProcessing(true);
+    setProcessedResults([]); // Clear previous results
     
     try {
-      const results = [];
-      
+      // Process images one by one
       for (let i = 0; i < selectedImages.length; i++) {
         const file = selectedImages[i];
-        const processedResult = await processImageWithOpenCV(file);
+        setCurrentProcessingImage(file);
         
-        results.push({
-          id: `student_${i + 1}`,
-          fileName: file.name,
-          studentId: processedResult.studentId,
-          phanI: processedResult.phanI,
-          phanII: processedResult.phanII,
-          phanIII: processedResult.phanIII,
-          processed: true,
+        // Wait for the ImageProcessor to complete processing
+        await new Promise<void>((resolve) => {
+          // This will be handled by the onProcessingComplete callback
+          const processingId = `processing-${i}`;
+          (window as unknown as Record<string, () => void>)[processingId] = resolve;
         });
       }
-
-      setProcessedResults(results);
-      
-      // Save to localStorage
-      localStorage.setItem('studentResults', JSON.stringify(results));
       
       setProcessing(false);
+      setCurrentProcessingImage(null);
+      
+      // Save to localStorage
+      const savedResults = localStorage.getItem('studentResults');
+      const existingResults = savedResults ? JSON.parse(savedResults) : [];
+      localStorage.setItem('studentResults', JSON.stringify([...existingResults, ...processedResults]));
+      
       alert('Xử lý ảnh hoàn tất!');
     } catch (error) {
       console.error('Error processing images:', error);
       setProcessing(false);
+      setCurrentProcessingImage(null);
       alert('Có lỗi xảy ra khi xử lý ảnh.');
     }
   };
 
-  const processImageWithOpenCV = (file: File): Promise<Omit<ProcessedResult, 'id' | 'fileName' | 'processed'>> => {
-    return new Promise((resolve, reject) => {
-      const imageUrl = URL.createObjectURL(file);
-      const img = new Image();
-      
-      img.onload = () => {
-        try {
-          // For now, return mock data since full OpenCV implementation is complex
-          const mockResult = {
-            studentId: Math.floor(Math.random() * 1000000000).toString().padStart(9, '0'),
-            phanI: Array.from({ length: 40 }, () => ['A', 'B', 'C', 'D'][Math.floor(Math.random() * 4)]),
-            phanII: Array.from({ length: 8 }, () => ({
-              a: Math.random() > 0.5,
-              b: Math.random() > 0.5,
-              c: Math.random() > 0.5,
-              d: Math.random() > 0.5,
-            })),
-            phanIII: Array.from({ length: 6 }, () => (Math.random() * 10).toFixed(1)),
-          };
-          
-          URL.revokeObjectURL(imageUrl);
-          resolve(mockResult);
-        } catch (error) {
-          URL.revokeObjectURL(imageUrl);
-          reject(error);
-        }
-      };
-      
-      img.onerror = () => {
-        URL.revokeObjectURL(imageUrl);
-        reject(new Error('Failed to load image'));
-      };
-      
-      img.src = imageUrl;
-    });
+  const handleProcessingComplete = (result: {
+    studentId: string;
+    phanI: string[];
+    phanII: Array<{ a: boolean; b: boolean; c: boolean; d: boolean }>;
+    phanIII: string[];
+    confidence: number;
+    debugImageUrl?: string;
+  }) => {
+    const newResult: ProcessedResult = {
+      id: `student_${processedResults.length + 1}`,
+      fileName: currentProcessingImage?.name || 'unknown',
+      studentId: result.studentId,
+      phanI: result.phanI,
+      phanII: result.phanII,
+      phanIII: result.phanIII,
+      processed: true,
+      debugImageUrl: result.debugImageUrl,
+    };
+    
+    setProcessedResults(prev => [...prev, newResult]);
+    
+    // Resolve the processing promise
+    const currentIndex = selectedImages.findIndex(img => img === currentProcessingImage);
+    const processingId = `processing-${currentIndex}`;
+    const windowRecord = window as unknown as Record<string, () => void>;
+    if (windowRecord[processingId]) {
+      windowRecord[processingId]();
+      delete windowRecord[processingId];
+    }
   };
+
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -244,11 +242,22 @@ export default function UploadPage() {
       {processing && (
         <div className="mb-6">
           <div className="bg-gray-200 rounded-full h-2">
-            <div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+            <div className="bg-blue-600 h-2 rounded-full animate-pulse" 
+                 style={{ width: `${((processedResults.length) / selectedImages.length) * 100}%` }}></div>
           </div>
           <p className="text-sm text-gray-600 mt-2">
-            Đang nhận diện mã số học sinh và các câu trả lời...
+            Đang xử lý ảnh {processedResults.length + 1}/{selectedImages.length}: {currentProcessingImage?.name}
           </p>
+        </div>
+      )}
+
+      {/* Image Processor */}
+      {currentProcessingImage && (
+        <div className="mb-6">
+          <ImageProcessor
+            imageFile={currentProcessingImage}
+            onProcessingComplete={handleProcessingComplete}
+          />
         </div>
       )}
 
@@ -256,39 +265,35 @@ export default function UploadPage() {
       {processedResults.length > 0 && (
         <div>
           <h3 className="text-lg font-semibold mb-3">Kết quả xử lý</h3>
-          <div className="overflow-x-auto">
-            <table className="min-w-full border border-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">
-                    Tên file
-                  </th>
-                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">
-                    Mã số học sinh
-                  </th>
-                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">
-                    Trạng thái
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {processedResults.map((result, index) => (
-                  <tr key={index} className="border-t border-gray-200">
-                    <td className="px-4 py-2 text-sm text-gray-900">
-                      {result.fileName}
-                    </td>
-                    <td className="px-4 py-2 text-sm text-gray-900">
-                      {result.studentId}
-                    </td>
-                    <td className="px-4 py-2 text-sm">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                        Đã xử lý
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-6">
+            {processedResults.map((result, index) => (
+              <div key={index} className="border border-gray-200 rounded-lg p-4">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h4 className="font-medium text-gray-900">{result.fileName}</h4>
+                    <p className="text-sm text-gray-600">Mã số học sinh: {result.studentId}</p>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1">
+                      Đã xử lý
+                    </span>
+                  </div>
+                </div>
+                
+                {result.debugImageUrl && (
+                  <div className="mt-4">
+                    <h5 className="font-medium text-gray-700 mb-2">Debug Visualization</h5>
+                    <img 
+                      src={result.debugImageUrl} 
+                      alt={`Debug visualization for ${result.fileName}`}
+                      className="max-w-full h-auto border border-gray-300 rounded"
+                      style={{ maxHeight: '400px' }}
+                    />
+                    <div className="text-xs text-gray-500 mt-2 bg-gray-50 p-2 rounded">
+                      <strong>Legend:</strong> 🔵 Student ID | 🟢 Correct Answer | 🔴 Wrong Answer
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
