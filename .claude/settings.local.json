@@ -4,7 +4,12 @@
       "Bash(npx create-next-app:*)",
       "Bash(npm install:*)",
       "Bash(mkdir:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(find:*)",
+      "Bash(npm run dev:*)",
+      "Bash(timeout 8 npm run dev)",
+      "Bash(node:*)",
+      "Bash(NODE_ENV=development node test-env.js)"
     ],
     "deny": []
   }
