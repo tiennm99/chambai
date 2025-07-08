@@ -228,19 +228,35 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
       });
     }
 
-    // FIRST: Mark ALL detected bubbles with yellow circles for debugging
-    console.log('🔍 Marking all detected bubbles:', bubbles.length);
+    // FIRST: Mark ALL available bubble positions with pink circles
+    console.log('🔍 Marking all available bubble positions:', bubbles.length);
     bubbles.forEach((bubble, index) => {
-      debugCtx.strokeStyle = '#FFFF00'; // Yellow for all bubbles
+      debugCtx.strokeStyle = '#FF69B4'; // Pink for all available positions
       debugCtx.lineWidth = 2;
       debugCtx.beginPath();
       debugCtx.arc(bubble.x + bubble.width/2, bubble.y + bubble.height/2, Math.max(bubble.width, bubble.height)/2 + 3, 0, 2 * Math.PI);
       debugCtx.stroke();
       
       // Add bubble index for debugging
-      debugCtx.fillStyle = '#FFFF00';
-      debugCtx.font = '12px Arial';
+      debugCtx.fillStyle = '#FF69B4';
+      debugCtx.font = '10px Arial';
       debugCtx.fillText(index.toString(), bubble.x, bubble.y - 5);
+    });
+    
+    // Add section labels for debugging
+    const sections = ['studentId', 'section1', 'section2', 'section3'];
+    sections.forEach(sectionName => {
+      const sectionBubbles = bubbles.filter(b => b.section === sectionName);
+      if (sectionBubbles.length > 0) {
+        const firstBubble = sectionBubbles[0];
+        debugCtx.fillStyle = '#000000';
+        debugCtx.font = 'bold 16px Arial';
+        debugCtx.fillText(
+          `${sectionName.toUpperCase()} (${sectionBubbles.length} bubbles)`,
+          firstBubble.x,
+          firstBubble.y - 15
+        );
+      }
     });
     
     // Mark student ID bubbles (blue circles)
@@ -326,21 +342,23 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
     
     // Add legend
     debugCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    debugCtx.fillRect(10, 10, 200, 80);
+    debugCtx.fillRect(10, 10, 220, 100);
     debugCtx.strokeStyle = '#000000';
     debugCtx.lineWidth = 1;
-    debugCtx.strokeRect(10, 10, 200, 80);
+    debugCtx.strokeRect(10, 10, 220, 100);
     
     debugCtx.fillStyle = '#000000';
     debugCtx.font = '14px Arial';
     debugCtx.fillText('Debug Legend:', 15, 30);
     
+    debugCtx.fillStyle = '#FF69B4';
+    debugCtx.fillText('● All Available Positions', 15, 50);
     debugCtx.fillStyle = '#3B82F6';
-    debugCtx.fillText('● Student ID', 15, 50);
+    debugCtx.fillText('● Student ID', 15, 65);
     debugCtx.fillStyle = '#10B981';
-    debugCtx.fillText('● Correct Answer', 15, 65);
+    debugCtx.fillText('● Correct Answer', 15, 80);
     debugCtx.fillStyle = '#EF4444';
-    debugCtx.fillText('● Wrong Answer', 15, 80);
+    debugCtx.fillText('● Wrong Answer', 15, 95);
     
     return debugCanvas.toDataURL();
   };
@@ -380,28 +398,10 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
     // Get test configuration for answer comparison
     const testConfig = getTestConfig();
     
-    // In development mode, return default answers for faster testing
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🚀 Development mode: Using default answers for faster testing');
-      const defaultAnswers = generateDefaultAnswers();
-      
-      // Create mock debug visualization for development with test bubbles
-      const mockBubbles: Bubble[] = [
-        { x: 100, y: 150, width: 20, height: 20, area: 400, circularity: 0.8 },
-        { x: 150, y: 150, width: 20, height: 20, area: 400, circularity: 0.8 },
-        { x: 200, y: 150, width: 20, height: 20, area: 400, circularity: 0.8 },
-        { x: 100, y: 400, width: 20, height: 20, area: 400, circularity: 0.8 },
-        { x: 150, y: 400, width: 20, height: 20, area: 400, circularity: 0.8 },
-        { x: 200, y: 400, width: 20, height: 20, area: 400, circularity: 0.8 },
-      ];
-      const debugUrl = createDebugVisualization(originalCanvas, mockBubbles, defaultAnswers, testConfig);
-      setDebugImageUrl(debugUrl);
-      
-      return {
-        ...defaultAnswers,
-        debugImageUrl: debugUrl
-      };
-    }
+    // Skip development mode check to enable actual bubble detection
+    console.log('🚀 Running actual bubble detection (development mode disabled)');
+    
+    // Remove the development mode check to allow full processing
     
     const cv = window.cv;
     
@@ -458,6 +458,8 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
     
     cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
     
+    console.log(`🔍 Found ${contours.size()} contours in image`);
+    
     const markers: { corners: Array<{x: number, y: number}>, edges: Array<{x: number, y: number}> } = { corners: [], edges: [] };
     
     for (let i = 0; i < contours.size(); i++) {
@@ -465,12 +467,14 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
       const area = cv.contourArea(contour);
       
       // Look for black reference markers (larger dark areas)
-      if (area > 400 && area < 3000) {
+      if (area > 200 && area < 5000) {
         const boundingRect = cv.boundingRect(contour);
         const aspectRatio = boundingRect.width / boundingRect.height;
         
-        // Corner markers (more square-like)
-        if (aspectRatio >= 0.7 && aspectRatio <= 1.3) {
+        console.log(`📍 Found contour: area=${area}, aspectRatio=${aspectRatio}, bounds=[${boundingRect.x},${boundingRect.y},${boundingRect.width},${boundingRect.height}]`);
+        
+        // Corner markers (more square-like) - relaxed criteria
+        if (aspectRatio >= 0.5 && aspectRatio <= 2.0) {
           markers.corners.push({
             x: boundingRect.x + boundingRect.width / 2,
             y: boundingRect.y + boundingRect.height / 2
@@ -506,8 +510,10 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
   const generateBubbleGrid = (markers: { corners: Array<{x: number, y: number}>, edges: Array<{x: number, y: number}> }, imageWidth: number, imageHeight: number): Bubble[] => {
     const bubbles: Bubble[] = [];
     
+    console.log(`📐 Marker detection results: ${markers.corners.length} corners, ${markers.edges.length} edges`);
+    
     if (markers.corners.length < 4) {
-      console.warn('⚠️ Not enough corner markers found, using default positioning');
+      console.warn(`⚠️ Not enough corner markers found (${markers.corners.length}/4), using default positioning`);
       return generateDefaultBubblePositions(imageWidth, imageHeight);
     }
     
@@ -549,21 +555,146 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
 
   const generateDefaultBubblePositions = (imageWidth: number, imageHeight: number): Bubble[] => {
     const bubbles: Bubble[] = [];
-    // Fallback positioning if markers aren't detected
-    // This provides a basic grid across the image
-    for (let y = 100; y < imageHeight - 100; y += 40) {
-      for (let x = 100; x < imageWidth - 100; x += 40) {
+    console.log(`⚡ Generating fallback bubble positions for ${imageWidth}x${imageHeight} image`);
+    
+    // Generate a comprehensive grid of bubbles based on the sheet structure
+    // This mimics the actual Vietnamese answer sheet layout
+    
+    // Student ID section (right side of the header area) - align with black rectangles
+    const studentInfoStartX = imageWidth * 0.72; // Right side of header
+    const studentInfoWidth = imageWidth * 0.23;
+    
+    // Generate student ID bubbles (10 columns for digits 0-9, 10 rows for 10 student ID fields)
+    for (let row = 0; row < 10; row++) { // 10 student ID fields
+      for (let col = 0; col < 10; col++) { // digits 0-9
         bubbles.push({
-          x: x - 10,
-          y: y - 10,
-          width: 20,
-          height: 20,
-          area: 400,
-          circularity: 0.8
+          x: studentInfoStartX + col * (studentInfoWidth / 10),
+          y: imageHeight * 0.135 + row * (imageHeight * 0.18 / 10), // Smaller vertical spacing
+          width: 8,
+          height: 8,
+          area: 64,
+          circularity: 0.8,
+          section: 'studentId',
+          column: col,
+          row: row
         });
       }
     }
-    return bubbles.slice(0, 200); // Limit to reasonable number
+    
+    // PHẦN I section (multiple choice A,B,C,D) - 4 columns of 10 questions each
+    const section1StartX = imageWidth * 0.08; // Move right
+    const section1Width = imageWidth * 0.85;
+    const section1StartY = imageHeight * 0.35; // Move higher
+    const section1Height = imageHeight * 0.25;
+    
+    // Generate 40 questions (4 columns × 10 rows)
+    for (let qCol = 0; qCol < 4; qCol++) {
+      for (let qRow = 0; qRow < 10; qRow++) {
+        const questionNum = qCol * 10 + qRow + 1;
+        const colX = section1StartX + qCol * (section1Width / 4);
+        const rowY = section1StartY + qRow * (section1Height / 10);
+        
+        for (let option = 0; option < 4; option++) {
+          bubbles.push({
+            x: colX + option * 30 + 25, // A,B,C,D spacing - spread out more
+            y: rowY,
+            width: 12,
+            height: 12,
+            area: 144,
+            circularity: 0.8,
+            section: 'section1',
+            question: questionNum,
+            option: ['A', 'B', 'C', 'D'][option]
+          });
+        }
+      }
+    }
+    
+    // PHẦN II section (True/False) - 8 columns with 4 rows each
+    const section2StartX = imageWidth * 0.08; // Align with PHẦN I
+    const section2Width = imageWidth * 0.85;
+    const section2StartY = imageHeight * 0.615; // After PHẦN I
+    const section2Height = imageHeight * 0.13;
+    
+    // Generate 8 questions (8 columns × 4 rows each)
+    for (let qCol = 0; qCol < 8; qCol++) {
+      for (let qRow = 0; qRow < 4; qRow++) {
+        const questionNum = qCol + 1;
+        const colX = section2StartX + qCol * (section2Width / 8); // 8 columns
+        const rowY = section2StartY + qRow * (section2Height / 4); // 4 rows
+        
+        const options = ['a', 'b', 'c', 'd'];
+        bubbles.push({
+          x: colX + 25, // Center in column
+          y: rowY,
+          width: 12,
+          height: 12,
+          area: 144,
+          circularity: 0.8,
+          section: 'section2',
+          question: questionNum,
+          option: options[qRow]
+        });
+      }
+    }
+    
+    // PHẦN III section (Numerical) - 6 questions, 12 rows (minus, comma, digits 0-9)
+    const section3StartX = imageWidth * 0.08; // Align with other sections
+    const section3Width = imageWidth * 0.85;
+    const section3StartY = imageHeight * 0.76; // After PHẦN II
+    const section3Height = imageHeight * 0.20;
+    
+    // Generate 6 questions (6 columns)
+    for (let qCol = 0; qCol < 6; qCol++) {
+      const colX = section3StartX + qCol * (section3Width / 6);
+      
+      // Row 0: minus (-) symbol
+      bubbles.push({
+        x: colX + 20,
+        y: section3StartY + 10,
+        width: 10,
+        height: 10,
+        area: 100,
+        circularity: 0.8,
+        section: 'section3',
+        question: qCol + 1,
+        symbol: '-'
+      });
+      
+      // Row 1: comma (,) symbol  
+      bubbles.push({
+        x: colX + 20,
+        y: section3StartY + 25,
+        width: 10,
+        height: 10,
+        area: 100,
+        circularity: 0.8,
+        section: 'section3',
+        question: qCol + 1,
+        symbol: ','
+      });
+      
+      // Rows 2-11: digits 0-9 (arranged in 2 columns of 5)
+      for (let digit = 0; digit < 10; digit++) {
+        const digitRow = Math.floor(digit / 5); // 0-4 -> column 0, 5-9 -> column 1
+        const digitCol = digit % 5; // position within the column
+        
+        bubbles.push({
+          x: colX + digitRow * 20 + 10,
+          y: section3StartY + 40 + digitCol * 15,
+          width: 10,
+          height: 10,
+          area: 100,
+          circularity: 0.8,
+          section: 'section3',
+          question: qCol + 1,
+          digit: digit
+        });
+      }
+    }
+    
+    console.log(`⚡ Generated ${bubbles.length} fallback bubble positions`);
+    return bubbles;
   };
 
   const generateStudentInfoBubbles = (bubbles: Bubble[], startX: number, startY: number, width: number, height: number) => {
@@ -914,6 +1045,10 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
             <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
               <div className="font-medium mb-2">Legend:</div>
               <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full border-2 border-pink-400"></div>
+                  <span>All available positions</span>
+                </div>
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 rounded-full border-2 border-blue-500"></div>
                   <span>Student ID bubbles</span>

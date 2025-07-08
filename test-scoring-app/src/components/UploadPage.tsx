@@ -288,7 +288,7 @@ export default function UploadPage() {
                       style={{ maxHeight: '400px' }}
                     />
                     <div className="text-xs text-gray-500 mt-2 bg-gray-50 p-2 rounded">
-                      <strong>Legend:</strong> 🔵 Student ID | 🟢 Correct Answer | 🔴 Wrong Answer
+                      <strong>Legend:</strong> 🩷 All Available Positions | 🔵 Student ID | 🟢 Correct Answer | 🔴 Wrong Answer
                     </div>
                   </div>
                 )}
