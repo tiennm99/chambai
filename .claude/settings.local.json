@@ -10,7 +10,10 @@
       "Bash(timeout 8 npm run dev)",
       "Bash(node:*)",
       "Bash(NODE_ENV=development node test-env.js)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(mv:*)",
+      "Bash(true)",
+      "Bash(rmdir:*)"
     ],
     "deny": []
   }

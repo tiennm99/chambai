@@ -18,7 +18,7 @@ Create a web application that allows teachers to:
 
 ### Application Structure
 ```
-/test-scoring-app/
+/chambai/
 ├── index.html
 ├── css/
 │   └── styles.css
