@@ -13,7 +13,8 @@
       "Bash(grep:*)",
       "Bash(mv:*)",
       "Bash(true)",
-      "Bash(rmdir:*)"
+      "Bash(rmdir:*)",
+      "Bash(sed:*)"
     ],
     "deny": []
   }

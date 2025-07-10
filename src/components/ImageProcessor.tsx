@@ -1,26 +1,22 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { ImageSaver, matToDataUrl } from '../utils/fileUtils';
+import { 
+  rectContour, 
+  getCornerPoints, 
+  reorder, 
+  splitBoxes, 
+  showAnswers, 
+  drawGrid 
+} from '../utils/opencvUtils';
 
-interface OpenCVRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-interface OpenCVScalar {
-  [key: number]: number;
-}
-
+// Simplified OpenCV interfaces to avoid type conflicts
 interface OpenCVMat {
   delete: () => void;
-  roi: (rect: OpenCVRect) => OpenCVMat;
-  setTo: (scalar: OpenCVScalar) => void;
   rows: number;
   cols: number;
-  size: () => number;
-  get: (index: number) => OpenCVMat;
+  [key: string]: unknown; // Allow any other properties
 }
 
 interface Bubble {
@@ -38,34 +34,12 @@ interface Bubble {
   subOption?: string;
   value?: boolean;
   digit?: number;
+  symbol?: string;
 }
 
 declare global {
   interface Window {
-    cv: {
-      matFromImageData: (imageData: ImageData) => OpenCVMat;
-      cvtColor: (src: OpenCVMat, dst: OpenCVMat, code: number) => void;
-      adaptiveThreshold: (src: OpenCVMat, dst: OpenCVMat, maxValue: number, adaptiveMethod: number, thresholdType: number, blockSize: number, C: number) => void;
-      findContours: (image: OpenCVMat, contours: OpenCVMat, hierarchy: OpenCVMat, mode: number, method: number) => void;
-      contourArea: (contour: OpenCVMat) => number;
-      arcLength: (contour: OpenCVMat, closed: boolean) => number;
-      boundingRect: (contour: OpenCVMat) => { x: number; y: number; width: number; height: number };
-      mean: (src: OpenCVMat, mask?: OpenCVMat) => number[];
-      circle: (img: OpenCVMat, center: { x: number; y: number }, radius: number, color: number[], thickness: number) => void;
-      bitwise_and: (src1: OpenCVMat, src2: OpenCVMat, dst: OpenCVMat, mask?: OpenCVMat) => void;
-      Mat: new (rows?: number, cols?: number, type?: number) => OpenCVMat;
-      MatVector: new () => OpenCVMat;
-      Rect: new (x: number, y: number, width: number, height: number) => OpenCVRect;
-      Scalar: new (...values: number[]) => OpenCVScalar;
-      COLOR_RGBA2GRAY: number;
-      ADAPTIVE_THRESH_GAUSSIAN_C: number;
-      THRESH_BINARY: number;
-      THRESH_BINARY_INV: number;
-      RETR_EXTERNAL: number;
-      CHAIN_APPROX_SIMPLE: number;
-      CV_8UC1: number;
-      onRuntimeInitialized: () => void;
-    };
+    cv: any;
   }
 }
 
@@ -98,10 +72,30 @@ interface ImageProcessorProps {
   onProcessingComplete: (result: ProcessingResult) => void;
 }
 
+interface ProcessingSteps {
+  original: string;
+  grayscale: string;
+  blur: string;
+  edges: string;
+  contours: string;
+  warped: string;
+  threshold: string;
+  final: string;
+}
+
+interface ProcessingProgress {
+  currentStep: string;
+  stepIndex: number;
+  totalSteps: number;
+  error?: string;
+}
+
 export default function ImageProcessor({ imageFile, onProcessingComplete }: ImageProcessorProps) {
   const [processing, setProcessing] = useState(false);
   const [cvLoaded, setCvLoaded] = useState(false);
   const [debugImageUrl, setDebugImageUrl] = useState<string | null>(null);
+  const [processingSteps, setProcessingSteps] = useState<ProcessingSteps | null>(null);
+  const [processingProgress, setProcessingProgress] = useState<ProcessingProgress | null>(null);
 
   useEffect(() => {
     const loadOpenCV = () => {
@@ -126,6 +120,328 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
     loadOpenCV();
   }, []);
 
+  const getTestConfig = (): TestConfig => {
+    if (typeof window !== 'undefined') {
+      const savedConfig = localStorage.getItem('testConfig');
+      if (savedConfig) {
+        return JSON.parse(savedConfig);
+      }
+    }
+    return {
+      phanI: { questionCount: 40, answers: [] },
+      phanII: { questionCount: 8, answers: [] },
+      phanIII: { questionCount: 6, answers: [] },
+    };
+  };
+
+  const updateProcessingStep = (stepName: string, stepIndex: number, totalSteps: number, imageUrl?: string) => {
+    console.log(`📸 Processing step ${stepIndex + 1}/${totalSteps}: ${stepName}`);
+    setProcessingProgress({
+      currentStep: stepName,
+      stepIndex,
+      totalSteps
+    });
+    
+    if (imageUrl) {
+      setProcessingSteps(prev => ({
+        ...prev,
+        [stepName.toLowerCase().replace(' ', '')]: imageUrl
+      }) as ProcessingSteps);
+    }
+  };
+
+  const setProcessingError = (error: string, stepName: string, stepIndex: number, totalSteps: number) => {
+    console.error(`❌ Error at step ${stepIndex + 1}/${totalSteps} (${stepName}):`, error);
+    setProcessingProgress({
+      currentStep: stepName,
+      stepIndex,
+      totalSteps,
+      error
+    });
+  };
+
+  const storeProcessingSteps = (
+    images: {
+      original: string;
+      grayscale: string;
+      blur: string;
+      edges: string;
+      contours: string;
+      warped: string;
+      threshold: string;
+      final: string;
+    }
+  ) => {
+    console.log('📸 Storing final processing steps for display...');
+    setProcessingSteps(images);
+    setProcessingProgress(null); // Clear progress when complete
+  };
+
+  const createDebugVisualization = (
+    originalCanvas: HTMLCanvasElement,
+    bubbles: Bubble[],
+    detectedAnswers: ProcessingResult,
+    testConfig: TestConfig
+  ): string => {
+    console.log('🎯 Creating debug visualization');
+
+    const debugCanvas = document.createElement('canvas');
+    const debugCtx = debugCanvas.getContext('2d');
+    
+    debugCanvas.width = originalCanvas.width;
+    debugCanvas.height = originalCanvas.height;
+    
+    debugCtx?.drawImage(originalCanvas, 0, 0);
+    
+    if (!debugCtx) return '';
+    
+    // Add legend
+    debugCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    debugCtx.fillRect(10, 10, 220, 100);
+    debugCtx.strokeStyle = '#000000';
+    debugCtx.lineWidth = 1;
+    debugCtx.strokeRect(10, 10, 220, 100);
+    
+    debugCtx.fillStyle = '#000000';
+    debugCtx.font = '14px Arial';
+    debugCtx.fillText('Debug Processing Complete', 15, 30);
+    
+    return debugCanvas.toDataURL();
+  };
+
+  const generateBubbleGrid = (markers: { corners: unknown[]; edges: unknown[] }, imageWidth: number, imageHeight: number): Bubble[] => {
+    console.log(`📐 Generating bubble grid for ${imageWidth}x${imageHeight}`);
+    return [];
+  };
+
+  const processWithNewOpenCV = useCallback((imageData: ImageData, originalCanvas: HTMLCanvasElement): ProcessingResult => {
+    const testConfig = getTestConfig();
+    const totalSteps = 8;
+    let stepIndex = 0;
+    
+    console.log('🚀 Running OpenCV bubble detection processing');
+    
+    const cv = window.cv as any;
+    
+    // Declare variables outside try block for proper cleanup
+    let src: any = null;
+    let imgGray: any = null;
+    let imgBlur: any = null;
+    let imgCanny: any = null;
+    let imgContours: any = null;
+    
+    try {
+      // Step 1: Create OpenCV Mat from ImageData
+      updateProcessingStep('Original', stepIndex++, totalSteps, originalCanvas.toDataURL());
+      src = cv.matFromImageData(imageData);
+      
+      // Step 2: Convert to grayscale
+      updateProcessingStep('Grayscale', stepIndex, totalSteps);
+      imgGray = new cv.Mat();
+      cv.cvtColor(src, imgGray, cv.COLOR_RGBA2GRAY);
+      updateProcessingStep('Grayscale', stepIndex++, totalSteps, matToDataUrl(imgGray));
+      
+      // Step 3: Apply Gaussian blur
+      updateProcessingStep('Blur', stepIndex, totalSteps);
+      imgBlur = new cv.Mat();
+      cv.GaussianBlur(imgGray, imgBlur, new cv.Size(5, 5), 1);
+      updateProcessingStep('Blur', stepIndex++, totalSteps, matToDataUrl(imgBlur));
+      
+      // Step 4: Apply Canny edge detection
+      updateProcessingStep('Edges', stepIndex, totalSteps);
+      imgCanny = new cv.Mat();
+      cv.Canny(imgBlur, imgCanny, 10, 70);
+      updateProcessingStep('Edges', stepIndex++, totalSteps, matToDataUrl(imgCanny));
+    
+      // Step 5: Find contours
+      updateProcessingStep('Contours', stepIndex, totalSteps);
+      const contours = new cv.MatVector();
+      const hierarchy = new cv.Mat();
+      cv.findContours(imgCanny, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      
+      // Create contour visualization
+      imgContours = src.clone();
+      cv.drawContours(imgContours, contours, -1, new cv.Scalar(0, 255, 0, 255), 2);
+      updateProcessingStep('Contours', stepIndex++, totalSteps, matToDataUrl(imgContours));
+      
+      // Step 6: Filter for rectangle contours
+      updateProcessingStep('Warped', stepIndex, totalSteps);
+      const rectCon = rectContour(contours);
+      
+      if (rectCon.size() >= 1) {
+        // Get corner points of the biggest rectangle
+        const biggestPoints = getCornerPoints(rectCon.get(0));
+        
+        if (biggestPoints.rows >= 4) {
+          // Reorder points for warping
+          const reorderedPoints = reorder(biggestPoints);
+          
+          // Prepare points for perspective transform
+          const heightImg = 700;
+          const widthImg = 700;
+          
+          const pts1 = cv.matFromArray(4, 1, cv.CV_32FC2, [
+            reorderedPoints.data32S[0], reorderedPoints.data32S[1],
+            reorderedPoints.data32S[2], reorderedPoints.data32S[3], 
+            reorderedPoints.data32S[4], reorderedPoints.data32S[5],
+            reorderedPoints.data32S[6], reorderedPoints.data32S[7]
+          ]);
+          
+          const pts2 = cv.matFromArray(4, 1, cv.CV_32FC2, [
+            0, 0, widthImg, 0, 0, heightImg, widthImg, heightImg
+          ]);
+          
+          // Get transformation matrix and apply perspective warp
+          const matrix = cv.getPerspectiveTransform(pts1, pts2);
+          const imgWarpColored = new cv.Mat();
+          cv.warpPerspective(src, imgWarpColored, matrix, new cv.Size(widthImg, heightImg));
+          updateProcessingStep('Warped', stepIndex++, totalSteps, matToDataUrl(imgWarpColored));
+          
+          // Step 7: Convert warped image to grayscale and apply threshold
+          updateProcessingStep('Threshold', stepIndex, totalSteps);
+          const imgWarpGray = new cv.Mat();
+          cv.cvtColor(imgWarpColored, imgWarpGray, cv.COLOR_BGR2GRAY);
+          
+          const imgThresh = new cv.Mat();
+          cv.threshold(imgWarpGray, imgThresh, 170, 255, cv.THRESH_BINARY_INV);
+          updateProcessingStep('Threshold', stepIndex++, totalSteps, matToDataUrl(imgThresh));
+          
+          // Split into boxes
+          const questions = 5;
+          const choices = 5;
+          const boxes = splitBoxes(imgThresh, questions, choices);
+          
+          // Calculate pixel values for each box
+          const myPixelVal: number[][] = [];
+          for (let r = 0; r < questions; r++) {
+            myPixelVal[r] = [];
+            for (let c = 0; c < choices; c++) {
+              const boxIndex = r * choices + c;
+              const totalPixels = cv.countNonZero(boxes[boxIndex]);
+              myPixelVal[r][c] = totalPixels;
+            }
+          }
+          
+          // Find user answers
+          const myIndex: number[] = [];
+          for (let x = 0; x < questions; x++) {
+            const maxVal = Math.max(...myPixelVal[x]);
+            const maxIndex = myPixelVal[x].indexOf(maxVal);
+            myIndex.push(maxIndex);
+          }
+          
+          // Compare with correct answers
+          const ans = [1, 2, 0, 2, 4]; // Example from Python code
+          const grading: boolean[] = [];
+          for (let x = 0; x < questions; x++) {
+            grading.push(ans[x] === myIndex[x]);
+          }
+          
+          const score = (grading.filter(g => g).length / questions) * 100;
+          
+          // Step 8: Show answers on the warped image
+          updateProcessingStep('Final', stepIndex, totalSteps);
+          showAnswers(imgWarpColored, myIndex, grading, ans, questions, choices);
+          drawGrid(imgWarpColored, questions, choices);
+          
+          // Create debug visualization
+          const bubbles = generateBubbleGrid({ corners: [], edges: [] }, imageData.width, imageData.height);
+          const result = {
+            studentId: 'DETECTED',
+            phanI: myIndex.map(idx => ['A', 'B', 'C', 'D', 'E'][idx] || ''),
+            phanII: Array(8).fill(null).map(() => ({ a: false, b: false, c: false, d: false })),
+            phanIII: Array(6).fill(''),
+            confidence: score / 100,
+          };
+          
+          const debugUrl = createDebugVisualization(originalCanvas, bubbles, result, testConfig);
+          setDebugImageUrl(debugUrl);
+          updateProcessingStep('Final', stepIndex++, totalSteps, debugUrl);
+          
+          // Store processing steps for display
+          storeProcessingSteps({
+            original: originalCanvas.toDataURL(),
+            grayscale: matToDataUrl(imgGray),
+            blur: matToDataUrl(imgBlur),
+            edges: matToDataUrl(imgCanny),
+            contours: matToDataUrl(imgContours),
+            warped: matToDataUrl(imgWarpColored),
+            threshold: matToDataUrl(imgThresh),
+            final: debugUrl
+          });
+          
+          // Clean up
+          boxes.forEach(box => box.delete());
+          imgWarpColored.delete();
+          imgWarpGray.delete();
+          imgThresh.delete();
+          pts1.delete();
+          pts2.delete();
+          matrix.delete();
+          
+          return {
+            ...result,
+            debugImageUrl: debugUrl
+          };
+        } else {
+          setProcessingError('Not enough corner points detected', 'Warped', stepIndex, totalSteps);
+        }
+      } else {
+        setProcessingError('No rectangular contours found', 'Contours', stepIndex, totalSteps);
+      }
+      
+      // Cleanup
+      contours.delete();
+      hierarchy.delete();
+      if (imgContours) imgContours.delete();
+    } catch (processingError) {
+      const errorMessage = processingError instanceof Error ? processingError.message : 'Unknown processing error';
+      setProcessingError(`Processing failed: ${errorMessage}`, 'Processing', stepIndex, totalSteps);
+      console.error('Error in OpenCV processing:', processingError);
+    }
+    
+    // Fallback result
+    const bubbles = generateBubbleGrid({ corners: [], edges: [] }, imageData.width, imageData.height);
+    const fallbackResult = {
+      studentId: 'UNKNOWN',
+      phanI: Array(40).fill(''),
+      phanII: Array(8).fill(null).map(() => ({ a: false, b: false, c: false, d: false })),
+      phanIII: Array(6).fill(''),
+      confidence: 0.0,
+    };
+    
+    const debugUrl = createDebugVisualization(originalCanvas, bubbles, fallbackResult, testConfig);
+    setDebugImageUrl(debugUrl);
+    
+    // Store fallback processing steps (only if variables exist)
+    try {
+      storeProcessingSteps({
+        original: originalCanvas.toDataURL(),
+        grayscale: imgGray ? matToDataUrl(imgGray) : originalCanvas.toDataURL(),
+        blur: imgBlur ? matToDataUrl(imgBlur) : originalCanvas.toDataURL(),
+        edges: imgCanny ? matToDataUrl(imgCanny) : originalCanvas.toDataURL(),
+        contours: originalCanvas.toDataURL(), // Use original as fallback
+        warped: originalCanvas.toDataURL(), // Use original as fallback
+        threshold: imgCanny ? matToDataUrl(imgCanny) : originalCanvas.toDataURL(),
+        final: debugUrl
+      });
+      
+      // Clean up (only if variables exist)
+      if (src) src.delete();
+      if (imgGray) imgGray.delete();
+      if (imgBlur) imgBlur.delete();
+      if (imgCanny) imgCanny.delete();
+      if (imgContours) imgContours.delete();
+    } catch (cleanupError) {
+      console.warn('Cleanup error:', cleanupError);
+    }
+    
+    return {
+      ...fallbackResult,
+      debugImageUrl: debugUrl
+    };
+  }, [imageFile, updateProcessingStep, setProcessingError, createDebugVisualization, generateBubbleGrid]);
+
   const processImage = useCallback(async () => {
     if (!cvLoaded || !window.cv) {
       console.error('OpenCV not loaded');
@@ -133,7 +449,9 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
     }
 
     setProcessing(true);
-    setDebugImageUrl(null); // Clear previous debug image
+    setDebugImageUrl(null);
+    setProcessingSteps(null);
+    setProcessingProgress(null);
 
     try {
       const imageUrl = URL.createObjectURL(imageFile);
@@ -150,7 +468,7 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
         const imageData = ctx?.getImageData(0, 0, canvas.width, canvas.height);
         
         if (imageData) {
-          const result = processWithOpenCV(imageData, canvas);
+          const result = processWithNewOpenCV(imageData, canvas);
           onProcessingComplete(result);
         }
         
@@ -163,928 +481,7 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
       console.error('Error processing image:', error);
       setProcessing(false);
     }
-  }, [cvLoaded, imageFile, onProcessingComplete]);
-
-  const getTestConfig = (): TestConfig => {
-    if (typeof window !== 'undefined') {
-      const savedConfig = localStorage.getItem('testConfig');
-      if (savedConfig) {
-        return JSON.parse(savedConfig);
-      }
-    }
-    // Default config
-    return {
-      phanI: { questionCount: 40, answers: [] },
-      phanII: { questionCount: 8, answers: [] },
-      phanIII: { questionCount: 6, answers: [] },
-    };
-  };
-
-  const createDebugVisualization = (
-    originalCanvas: HTMLCanvasElement,
-    bubbles: Bubble[],
-    detectedAnswers: ProcessingResult,
-    testConfig: TestConfig,
-    gray: OpenCVMat
-  ): string => {
-    console.log('🎯 Creating debug visualization with:', {
-      totalBubbles: bubbles.length,
-      canvasSize: { width: originalCanvas.width, height: originalCanvas.height },
-      detectedAnswers,
-      bubblesSample: bubbles.slice(0, 5) // Show first 5 bubbles
-    });
-
-    // Create a new canvas for debug visualization
-    const debugCanvas = document.createElement('canvas');
-    const debugCtx = debugCanvas.getContext('2d');
-    
-    debugCanvas.width = originalCanvas.width;
-    debugCanvas.height = originalCanvas.height;
-    
-    // Draw original image
-    debugCtx?.drawImage(originalCanvas, 0, 0);
-    
-    if (!debugCtx) return '';
-    
-    // If no bubbles detected in production mode, create some test circles to verify the visualization works
-    if (bubbles.length === 0 && process.env.NODE_ENV !== 'development') {
-      console.log('⚠️ No bubbles detected! Adding test circles for debugging');
-      // Add some test circles at known positions
-      const testPositions = [
-        { x: 100, y: 150 }, { x: 150, y: 150 }, { x: 200, y: 150 }, // Top row
-        { x: 100, y: 400 }, { x: 150, y: 400 }, { x: 200, y: 400 }, // Middle row
-        { x: 100, y: 800 }, { x: 150, y: 800 }, { x: 200, y: 800 }  // Bottom row
-      ];
-      
-      testPositions.forEach((pos, index) => {
-        debugCtx.strokeStyle = '#FF00FF'; // Magenta for test circles
-        debugCtx.lineWidth = 3;
-        debugCtx.beginPath();
-        debugCtx.arc(pos.x, pos.y, 15, 0, 2 * Math.PI);
-        debugCtx.stroke();
-        
-        debugCtx.fillStyle = '#FF00FF';
-        debugCtx.font = '12px Arial';
-        debugCtx.fillText(`T${index}`, pos.x + 20, pos.y);
-      });
-    }
-
-    // FIRST: Mark ALL available bubble positions with pink circles
-    console.log('🔍 Marking all available bubble positions:', bubbles.length);
-    bubbles.forEach((bubble, index) => {
-      debugCtx.strokeStyle = '#FF69B4'; // Pink for all available positions
-      debugCtx.lineWidth = 2;
-      debugCtx.beginPath();
-      debugCtx.arc(bubble.x + bubble.width/2, bubble.y + bubble.height/2, Math.max(bubble.width, bubble.height)/2 + 3, 0, 2 * Math.PI);
-      debugCtx.stroke();
-      
-      // Add bubble index for debugging
-      debugCtx.fillStyle = '#FF69B4';
-      debugCtx.font = '10px Arial';
-      debugCtx.fillText(index.toString(), bubble.x, bubble.y - 5);
-    });
-    
-    // Add section labels for debugging
-    const sections = ['studentId', 'section1', 'section2', 'section3'];
-    sections.forEach(sectionName => {
-      const sectionBubbles = bubbles.filter(b => b.section === sectionName);
-      if (sectionBubbles.length > 0) {
-        const firstBubble = sectionBubbles[0];
-        debugCtx.fillStyle = '#000000';
-        debugCtx.font = 'bold 16px Arial';
-        debugCtx.fillText(
-          `${sectionName.toUpperCase()} (${sectionBubbles.length} bubbles)`,
-          firstBubble.x,
-          firstBubble.y - 15
-        );
-      }
-    });
-    
-    // Mark student ID bubbles (blue circles) with confidence levels
-    const idBubbles = bubbles.filter(b => b.section === 'studentId');
-    console.log('🔵 Student ID bubbles found:', idBubbles.length);
-    idBubbles.forEach(bubble => {
-      // Get fill confidence for this bubble
-      const confidence = isBubbleFilled(bubble, gray);
-      
-      // Use gradient color based on confidence
-      const alpha = Math.min(1.0, confidence * 2); // Scale alpha based on confidence
-      debugCtx.strokeStyle = confidence > 0.4 ? `rgba(59, 130, 246, ${alpha})` : '#3B82F6'; // Blue
-      debugCtx.lineWidth = confidence > 0.4 ? 6 : 4;
-      debugCtx.beginPath();
-      debugCtx.arc(bubble.x + bubble.width/2, bubble.y + bubble.height/2, Math.max(bubble.width, bubble.height)/2 + 8, 0, 2 * Math.PI);
-      debugCtx.stroke();
-      
-      // Display confidence number
-      if (confidence > 0.2) {
-        debugCtx.fillStyle = '#3B82F6';
-        debugCtx.font = '8px Arial';
-        debugCtx.fillText(confidence.toFixed(2), bubble.x + bubble.width + 5, bubble.y + bubble.height/2);
-      }
-    });
-    
-    // Mark Section 1 answers (A,B,C,D) - green for correct, red for wrong with confidence
-    const section1Bubbles = bubbles.filter(b => b.section === 'section1');
-    
-    section1Bubbles.forEach(bubble => {
-      const questionNum = bubble.question;
-      const option = bubble.option;
-      
-      // Get fill confidence for this bubble
-      const confidence = isBubbleFilled(bubble, gray);
-      
-      if (questionNum && questionNum <= detectedAnswers.phanI.length) {
-        const detectedAnswer = detectedAnswers.phanI[questionNum - 1];
-        const correctAnswer = testConfig.phanI.answers[questionNum - 1];
-        
-        if (detectedAnswer === option && confidence > 0.4) {
-          const isCorrect = detectedAnswer === correctAnswer;
-          
-          // Use gradient color based on confidence
-          const alpha = Math.min(1.0, confidence * 2);
-          debugCtx.strokeStyle = isCorrect ? `rgba(16, 185, 129, ${alpha})` : `rgba(239, 68, 68, ${alpha})`;
-          debugCtx.lineWidth = confidence > 0.6 ? 4 : 3;
-          debugCtx.beginPath();
-          debugCtx.arc(bubble.x + bubble.width/2, bubble.y + bubble.height/2, bubble.width/2 + 5, 0, 2 * Math.PI);
-          debugCtx.stroke();
-          
-          // Display confidence number
-          debugCtx.fillStyle = isCorrect ? '#10B981' : '#EF4444';
-          debugCtx.font = '8px Arial';
-          debugCtx.fillText(confidence.toFixed(2), bubble.x + bubble.width + 5, bubble.y + bubble.height/2);
-        }
-      }
-    });
-    
-    // Mark Section 2 answers (True/False) - green for correct, red for wrong
-    const section2Bubbles = bubbles.filter(b => b.section === 'section2');
-    
-    section2Bubbles.forEach(bubble => {
-      const questionNum = bubble.question;
-      const subOption = bubble.subOption;
-      const value = bubble.value;
-      
-      if (questionNum && questionNum <= detectedAnswers.phanII.length) {
-        const detectedAnswer = detectedAnswers.phanII[questionNum - 1];
-        const correctAnswer = testConfig.phanII.answers[questionNum - 1];
-        
-        if (subOption && detectedAnswer[subOption as 'a' | 'b' | 'c' | 'd'] === value) {
-          const isCorrect = correctAnswer?.[subOption as 'a' | 'b' | 'c' | 'd'] === value;
-          
-          debugCtx.strokeStyle = isCorrect ? '#10B981' : '#EF4444'; // Green or Red
-          debugCtx.lineWidth = 3;
-          debugCtx.beginPath();
-          debugCtx.arc(bubble.x + bubble.width/2, bubble.y + bubble.height/2, bubble.width/2 + 5, 0, 2 * Math.PI);
-          debugCtx.stroke();
-        }
-      }
-    });
-    
-    // Mark Section 3 answers (Numerical) - green for correct, red for wrong
-    const section3Bubbles = bubbles.filter(b => b.section === 'section3');
-    
-    section3Bubbles.forEach(bubble => {
-      const questionNum = bubble.question;
-      const digit = bubble.digit;
-      
-      if (questionNum && questionNum <= detectedAnswers.phanIII.length) {
-        const detectedAnswer = detectedAnswers.phanIII[questionNum - 1];
-        const correctAnswer = testConfig.phanIII.answers[questionNum - 1];
-        
-        if (digit !== undefined && detectedAnswer === digit.toString()) {
-          const isCorrect = detectedAnswer === correctAnswer;
-          
-          debugCtx.strokeStyle = isCorrect ? '#10B981' : '#EF4444'; // Green or Red
-          debugCtx.lineWidth = 3;
-          debugCtx.beginPath();
-          debugCtx.arc(bubble.x + bubble.width/2, bubble.y + bubble.height/2, bubble.width/2 + 5, 0, 2 * Math.PI);
-          debugCtx.stroke();
-        }
-      }
-    });
-    
-    // Add legend
-    debugCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    debugCtx.fillRect(10, 10, 220, 100);
-    debugCtx.strokeStyle = '#000000';
-    debugCtx.lineWidth = 1;
-    debugCtx.strokeRect(10, 10, 220, 100);
-    
-    debugCtx.fillStyle = '#000000';
-    debugCtx.font = '14px Arial';
-    debugCtx.fillText('Debug Legend:', 15, 30);
-    
-    debugCtx.fillStyle = '#FF69B4';
-    debugCtx.fillText('● All Available Positions', 15, 50);
-    debugCtx.fillStyle = '#3B82F6';
-    debugCtx.fillText('● Student ID', 15, 65);
-    debugCtx.fillStyle = '#10B981';
-    debugCtx.fillText('● Correct Answer', 15, 80);
-    debugCtx.fillStyle = '#EF4444';
-    debugCtx.fillText('● Wrong Answer', 15, 95);
-    
-    return debugCanvas.toDataURL();
-  };
-
-  const generateDefaultAnswers = (): ProcessingResult => {
-    // Default answers for development mode
-    const defaultPhanI = [
-      'A', 'B', 'C', 'D', 'A', 'B', 'C', 'D', 'A', 'B', // Questions 1-10
-      'C', 'D', 'A', 'B', 'C', 'D', 'A', 'B', 'C', 'D', // Questions 11-20
-      'A', 'B', 'C', 'D', 'A', 'B', 'C', 'D', 'A', 'B', // Questions 21-30
-      'C', 'D', 'A', 'B', 'C', 'D', 'A', 'B', 'C', 'D'  // Questions 31-40
-    ];
-    
-    const defaultPhanII = [
-      { a: true, b: false, c: true, d: false },   // Question 1
-      { a: false, b: true, c: false, d: true },   // Question 2
-      { a: true, b: true, c: false, d: false },   // Question 3
-      { a: false, b: false, c: true, d: true },   // Question 4
-      { a: true, b: false, c: false, d: true },   // Question 5
-      { a: false, b: true, c: true, d: false },   // Question 6
-      { a: true, b: true, c: true, d: false },    // Question 7
-      { a: false, b: false, c: false, d: true }   // Question 8
-    ];
-    
-    const defaultPhanIII = ['7', '3', '9', '1', '5', '2']; // Questions 1-6
-    
-    return {
-      studentId: '123456789',
-      phanI: defaultPhanI,
-      phanII: defaultPhanII,
-      phanIII: defaultPhanIII,
-      confidence: 0.95,
-    };
-  };
-
-  // Improved preprocessing function
-  const preprocessImage = (src: OpenCVMat): OpenCVMat => {
-    const cv = window.cv;
-    
-    // Convert to grayscale
-    const gray = new cv.Mat();
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-    
-    // Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
-    const clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
-    const enhanced = new cv.Mat();
-    clahe.apply(gray, enhanced);
-    
-    // Apply bilateral filter to reduce noise while keeping edges
-    const filtered = new cv.Mat();
-    cv.bilateralFilter(enhanced, filtered, 9, 75, 75);
-    
-    console.log('🎯 Image preprocessing completed: CLAHE + bilateral filtering');
-    
-    // Cleanup
-    gray.delete();
-    enhanced.delete();
-    clahe.delete();
-    
-    return filtered;
-  };
-
-  const processWithOpenCV = (imageData: ImageData, originalCanvas: HTMLCanvasElement): ProcessingResult => {
-    // Get test configuration for answer comparison
-    const testConfig = getTestConfig();
-    
-    // Skip development mode check to enable actual bubble detection
-    console.log('🚀 Running actual bubble detection (development mode disabled)');
-    
-    // Remove the development mode check to allow full processing
-    
-    const cv = window.cv;
-    
-    // Create OpenCV Mat from ImageData
-    const src = cv.matFromImageData(imageData);
-    
-    // Apply improved preprocessing
-    const gray = preprocessImage(src);
-    
-    // Apply adaptive threshold for bubble detection
-    const thresh = new cv.Mat();
-    cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 2);
-    
-    // Detect reference markers (black squares/rectangles)
-    const markers = detectReferenceMarkers(thresh);
-    
-    // Generate bubble positions based on reference markers
-    const bubbles = generateBubbleGrid(markers, imageData.width, imageData.height);
-    
-    // Process different sections using the generated positions
-    const studentId = detectStudentId(bubbles, gray);
-    const phanI = detectSection1Answers(bubbles, gray);
-    const phanII = detectSection2Answers(bubbles, gray);
-    const phanIII = detectSection3Answers(bubbles, gray);
-    
-    const result = {
-      studentId,
-      phanI,
-      phanII,
-      phanIII,
-      confidence: 0.85,
-    };
-    
-    // Create debug visualization
-    const debugUrl = createDebugVisualization(originalCanvas, bubbles, result, testConfig, gray);
-    setDebugImageUrl(debugUrl);
-    
-    // Clean up OpenCV Mats
-    src.delete();
-    gray.delete();
-    thresh.delete();
-    
-    return {
-      ...result,
-      debugImageUrl: debugUrl
-    };
-  };
-
-  const detectReferenceMarkers = (thresh: OpenCVMat): { corners: Array<{x: number, y: number}>, edges: Array<{x: number, y: number}> } => {
-    const cv = window.cv;
-    const contours = new cv.MatVector();
-    const hierarchy = new cv.Mat();
-    
-    cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-    
-    console.log(`🔍 Found ${contours.size()} contours in image`);
-    
-    const markers: { corners: Array<{x: number, y: number}>, edges: Array<{x: number, y: number}> } = { corners: [], edges: [] };
-    
-    for (let i = 0; i < contours.size(); i++) {
-      const contour = contours.get(i);
-      const area = cv.contourArea(contour);
-      
-      // Look for black reference markers (larger dark areas)
-      if (area > 200 && area < 5000) {
-        const boundingRect = cv.boundingRect(contour);
-        const aspectRatio = boundingRect.width / boundingRect.height;
-        
-        console.log(`📍 Found contour: area=${area}, aspectRatio=${aspectRatio}, bounds=[${boundingRect.x},${boundingRect.y},${boundingRect.width},${boundingRect.height}]`);
-        
-        // Corner markers (more square-like) - relaxed criteria
-        if (aspectRatio >= 0.5 && aspectRatio <= 2.0) {
-          markers.corners.push({
-            x: boundingRect.x + boundingRect.width / 2,
-            y: boundingRect.y + boundingRect.height / 2
-          });
-        }
-        // Edge markers (more rectangular)
-        else if (aspectRatio >= 0.3 && aspectRatio <= 3.0) {
-          markers.edges.push({
-            x: boundingRect.x + boundingRect.width / 2,
-            y: boundingRect.y + boundingRect.height / 2
-          });
-        }
-      }
-    }
-    
-    contours.delete();
-    hierarchy.delete();
-    
-    // Sort markers by position
-    markers.corners.sort((a, b) => a.y - b.y || a.x - b.x);
-    markers.edges.sort((a, b) => a.y - b.y || a.x - b.x);
-    
-    console.log('🔲 Reference markers found:', {
-      corners: markers.corners.length,
-      edges: markers.edges.length,
-      cornerPositions: markers.corners,
-      edgePositions: markers.edges
-    });
-    
-    return markers;
-  };
-
-  const generateBubbleGrid = (markers: { corners: Array<{x: number, y: number}>, edges: Array<{x: number, y: number}> }, imageWidth: number, imageHeight: number): Bubble[] => {
-    const bubbles: Bubble[] = [];
-    
-    console.log(`📐 Marker detection results: ${markers.corners.length} corners, ${markers.edges.length} edges`);
-    
-    if (markers.corners.length < 4) {
-      console.warn(`⚠️ Not enough corner markers found (${markers.corners.length}/4), using default positioning`);
-      return generateDefaultBubblePositions(imageWidth, imageHeight);
-    }
-    
-    // Calculate sheet boundaries from corner markers
-    const leftX = Math.min(...markers.corners.map(c => c.x));
-    const rightX = Math.max(...markers.corners.map(c => c.x));
-    const topY = Math.min(...markers.corners.map(c => c.y));
-    const bottomY = Math.max(...markers.corners.map(c => c.y));
-    
-    const sheetWidth = rightX - leftX;
-    const sheetHeight = bottomY - topY;
-    
-    console.log('📐 Sheet boundaries:', { leftX, rightX, topY, bottomY, sheetWidth, sheetHeight });
-    
-    // Define the 4 vertical sections based on the sheet boundaries
-    const sectionWidth = sheetWidth / 4;
-    
-    // Section 1: Student Info (11 rows of digits 0-9)
-    const section1X = leftX;
-    const section1Width = sectionWidth * 0.8; // Slightly smaller
-    generateStudentInfoBubbles(bubbles, section1X, topY, section1Width, sheetHeight);
-    
-    // Section 2: PHẦN I - Multiple Choice (4 columns × 10 rows = 40 questions)
-    const section2X = leftX + sectionWidth;
-    generateSection1Bubbles(bubbles, section2X, topY, sectionWidth, sheetHeight);
-    
-    // Section 3: PHẦN II - True/False (8 questions × 4 options)
-    const section3X = leftX + sectionWidth * 2;
-    generateSection2Bubbles(bubbles, section3X, topY, sectionWidth, sheetHeight);
-    
-    // Section 4: PHẦN III - Numerical (6 questions × 10 digits)
-    const section4X = leftX + sectionWidth * 3;
-    generateSection3Bubbles(bubbles, section4X, topY, sectionWidth, sheetHeight);
-    
-    console.log(`✅ Generated ${bubbles.length} bubble positions based on reference markers`);
-    
-    return bubbles;
-  };
-
-  const generateDefaultBubblePositions = (imageWidth: number, imageHeight: number): Bubble[] => {
-    const bubbles: Bubble[] = [];
-    console.log(`⚡ Generating fallback bubble positions for ${imageWidth}x${imageHeight} image`);
-    
-    // Generate a comprehensive grid of bubbles based on the sheet structure
-    // This mimics the actual Vietnamese answer sheet layout
-    
-    // Student ID section (right side of the header area) - align with black rectangles
-    const studentInfoStartX = imageWidth * 0.72; // Right side of header
-    const studentInfoWidth = imageWidth * 0.23;
-    
-    // Generate student ID bubbles (10 columns for digits 0-9, 10 rows for 10 student ID fields)
-    for (let row = 0; row < 10; row++) { // 10 student ID fields
-      for (let col = 0; col < 10; col++) { // digits 0-9
-        bubbles.push({
-          x: studentInfoStartX + col * (studentInfoWidth / 10),
-          y: imageHeight * 0.135 + row * (imageHeight * 0.18 / 10), // Smaller vertical spacing
-          width: 8,
-          height: 8,
-          area: 64,
-          circularity: 0.8,
-          section: 'studentId',
-          column: col,
-          row: row
-        });
-      }
-    }
-    
-    // PHẦN I section (multiple choice A,B,C,D) - 4 columns of 10 questions each
-    const section1StartX = imageWidth * 0.08; // Move right
-    const section1Width = imageWidth * 0.85;
-    const section1StartY = imageHeight * 0.35; // Move higher
-    const section1Height = imageHeight * 0.25;
-    
-    // Generate 40 questions (4 columns × 10 rows)
-    for (let qCol = 0; qCol < 4; qCol++) {
-      for (let qRow = 0; qRow < 10; qRow++) {
-        const questionNum = qCol * 10 + qRow + 1;
-        const colX = section1StartX + qCol * (section1Width / 4);
-        const rowY = section1StartY + qRow * (section1Height / 10);
-        
-        for (let option = 0; option < 4; option++) {
-          bubbles.push({
-            x: colX + option * 30 + 25, // A,B,C,D spacing - spread out more
-            y: rowY,
-            width: 12,
-            height: 12,
-            area: 144,
-            circularity: 0.8,
-            section: 'section1',
-            question: questionNum,
-            option: ['A', 'B', 'C', 'D'][option]
-          });
-        }
-      }
-    }
-    
-    // PHẦN II section (True/False) - 8 columns with 4 rows each
-    const section2StartX = imageWidth * 0.08; // Align with PHẦN I
-    const section2Width = imageWidth * 0.85;
-    const section2StartY = imageHeight * 0.615; // After PHẦN I
-    const section2Height = imageHeight * 0.13;
-    
-    // Generate 8 questions (8 columns × 4 rows each)
-    for (let qCol = 0; qCol < 8; qCol++) {
-      for (let qRow = 0; qRow < 4; qRow++) {
-        const questionNum = qCol + 1;
-        const colX = section2StartX + qCol * (section2Width / 8); // 8 columns
-        const rowY = section2StartY + qRow * (section2Height / 4); // 4 rows
-        
-        const options = ['a', 'b', 'c', 'd'];
-        bubbles.push({
-          x: colX + 25, // Center in column
-          y: rowY,
-          width: 12,
-          height: 12,
-          area: 144,
-          circularity: 0.8,
-          section: 'section2',
-          question: questionNum,
-          option: options[qRow]
-        });
-      }
-    }
-    
-    // PHẦN III section (Numerical) - 6 questions, 12 rows (minus, comma, digits 0-9)
-    const section3StartX = imageWidth * 0.08; // Align with other sections
-    const section3Width = imageWidth * 0.85;
-    const section3StartY = imageHeight * 0.76; // After PHẦN II
-    const section3Height = imageHeight * 0.20;
-    
-    // Generate 6 questions (6 columns)
-    for (let qCol = 0; qCol < 6; qCol++) {
-      const colX = section3StartX + qCol * (section3Width / 6);
-      
-      // Row 0: minus (-) symbol
-      bubbles.push({
-        x: colX + 20,
-        y: section3StartY + 10,
-        width: 10,
-        height: 10,
-        area: 100,
-        circularity: 0.8,
-        section: 'section3',
-        question: qCol + 1,
-        symbol: '-'
-      });
-      
-      // Row 1: comma (,) symbol  
-      bubbles.push({
-        x: colX + 20,
-        y: section3StartY + 25,
-        width: 10,
-        height: 10,
-        area: 100,
-        circularity: 0.8,
-        section: 'section3',
-        question: qCol + 1,
-        symbol: ','
-      });
-      
-      // Rows 2-11: digits 0-9 (arranged in 2 columns of 5)
-      for (let digit = 0; digit < 10; digit++) {
-        const digitRow = Math.floor(digit / 5); // 0-4 -> column 0, 5-9 -> column 1
-        const digitCol = digit % 5; // position within the column
-        
-        bubbles.push({
-          x: colX + digitRow * 20 + 10,
-          y: section3StartY + 40 + digitCol * 15,
-          width: 10,
-          height: 10,
-          area: 100,
-          circularity: 0.8,
-          section: 'section3',
-          question: qCol + 1,
-          digit: digit
-        });
-      }
-    }
-    
-    console.log(`⚡ Generated ${bubbles.length} fallback bubble positions`);
-    return bubbles;
-  };
-
-  const generateStudentInfoBubbles = (bubbles: Bubble[], startX: number, startY: number, width: number, height: number) => {
-    // Student ID section: Multiple columns of digits 0-9
-    const cols = 9; // 9-digit student ID
-    const rows = 10; // digits 0-9
-    const colWidth = width / cols;
-    const rowHeight = height * 0.3 / rows; // Use top 30% of sheet
-    
-    for (let col = 0; col < cols; col++) {
-      for (let row = 0; row < rows; row++) {
-        bubbles.push({
-          x: startX + col * colWidth + colWidth * 0.3,
-          y: startY + height * 0.1 + row * rowHeight,
-          width: 15,
-          height: 15,
-          area: 225,
-          circularity: 0.8,
-          section: 'studentId',
-          column: col,
-          row: row
-        });
-      }
-    }
-  };
-
-  const generateSection1Bubbles = (bubbles: Bubble[], startX: number, startY: number, width: number, height: number) => {
-    // PHẦN I: 4 columns × 10 rows = 40 questions (A,B,C,D options)
-    const questionCols = 4;
-    const questionRows = 10;
-    const optionCols = 4; // A, B, C, D
-    
-    const colWidth = width / questionCols;
-    const rowHeight = height * 0.3 / questionRows; // Use middle 30% of sheet
-    
-    for (let qCol = 0; qCol < questionCols; qCol++) {
-      for (let qRow = 0; qRow < questionRows; qRow++) {
-        for (let option = 0; option < optionCols; option++) {
-          bubbles.push({
-            x: startX + qCol * colWidth + option * (colWidth / optionCols) + colWidth * 0.1,
-            y: startY + height * 0.35 + qRow * rowHeight,
-            width: 12,
-            height: 12,
-            area: 144,
-            circularity: 0.8,
-            section: 'section1',
-            question: qCol * questionRows + qRow + 1,
-            option: String.fromCharCode(65 + option) // A, B, C, D
-          });
-        }
-      }
-    }
-  };
-
-  const generateSection2Bubbles = (bubbles: Bubble[], startX: number, startY: number, width: number, height: number) => {
-    // PHẦN II: 8 questions with True/False for a,b,c,d
-    const questions = 8;
-    const questionCols = 4; // 2 questions per row, 2 columns per question
-    const optionCols = 2; // True/False (Đúng/Sai)
-    const subOptions = 4; // a, b, c, d
-    
-    const questionWidth = width / questionCols;
-    const questionHeight = height * 0.15 / (questions / 2); // Use middle-bottom 15% of sheet
-    
-    for (let q = 0; q < questions; q++) {
-      const qCol = q % questionCols;
-      const qRow = Math.floor(q / questionCols);
-      
-      for (let sub = 0; sub < subOptions; sub++) {
-        for (let option = 0; option < optionCols; option++) {
-          bubbles.push({
-            x: startX + qCol * questionWidth + sub * (questionWidth / subOptions) + option * (questionWidth / subOptions / optionCols) + questionWidth * 0.05,
-            y: startY + height * 0.65 + qRow * questionHeight + sub * (questionHeight / subOptions),
-            width: 10,
-            height: 10,
-            area: 100,
-            circularity: 0.8,
-            section: 'section2',
-            question: q + 1,
-            subOption: String.fromCharCode(97 + sub), // a, b, c, d
-            value: option === 0 // true for first option (Đúng), false for second (Sai)
-          });
-        }
-      }
-    }
-  };
-
-  const generateSection3Bubbles = (bubbles: Bubble[], startX: number, startY: number, width: number, height: number) => {
-    // PHẦN III: 6 questions × 10 digits (0-9)
-    const questions = 6;
-    const digits = 10; // 0-9
-    
-    const questionWidth = width / questions;
-    const digitHeight = height * 0.3 / digits; // Use bottom 30% of sheet
-    
-    for (let q = 0; q < questions; q++) {
-      for (let digit = 0; digit < digits; digit++) {
-        bubbles.push({
-          x: startX + q * questionWidth + questionWidth * 0.3,
-          y: startY + height * 0.7 + digit * digitHeight,
-          width: 12,
-          height: 12,
-          area: 144,
-          circularity: 0.8,
-          section: 'section3',
-          question: q + 1,
-          digit: digit
-        });
-      }
-    }
-  };
-
-  const isBubbleFilled = (bubble: Bubble, gray: OpenCVMat): number => {
-    const cv = window.cv;
-    
-    try {
-      // Create ROI with smaller padding to avoid noise
-      const padding = 2;
-      const rect = new cv.Rect(
-        Math.max(0, bubble.x - padding), 
-        Math.max(0, bubble.y - padding), 
-        bubble.width + padding * 2, 
-        bubble.height + padding * 2
-      );
-      const roi = gray.roi(rect);
-      
-      // Apply Gaussian blur to reduce noise
-      const blurred = new cv.Mat();
-      cv.GaussianBlur(roi, blurred, new cv.Size(3, 3), 0);
-      
-      // Calculate mean intensity
-      const meanValue = cv.mean(blurred);
-      const fillConfidence = 1.0 - (meanValue[0] / 255.0);
-      
-      // Add standard deviation check to detect edge cases
-      const stdDev = new cv.Mat();
-      const mean = new cv.Mat();
-      cv.meanStdDev(blurred, mean, stdDev);
-      const variance = stdDev.data64F[0];
-      
-      // If variance is high, might be partially filled bubble
-      let adjustedConfidence = fillConfidence;
-      if (variance > 50) {
-        adjustedConfidence = Math.max(0.3, fillConfidence - 0.1);
-      }
-      
-      // Detailed logging for debugging
-      console.log(`🔍 Bubble at (${bubble.x}, ${bubble.y}) - Fill confidence: ${adjustedConfidence.toFixed(3)}`);
-      console.log(`📊 Mean intensity: ${meanValue[0].toFixed(2)}, Variance: ${variance.toFixed(2)}`);
-      
-      // Cleanup
-      roi.delete();
-      blurred.delete();
-      stdDev.delete();
-      mean.delete();
-      
-      return adjustedConfidence;
-    } catch (error) {
-      console.error('Error in isBubbleFilled:', error);
-      return 0.0;
-    }
-  };
-
-
-  const detectStudentId = (bubbles: Bubble[], gray: OpenCVMat): string => {
-    // Filter bubbles for student ID section
-    const idBubbles = bubbles.filter(b => b.section === 'studentId');
-    
-    if (idBubbles.length === 0) {
-      return 'UNKNOWN';
-    }
-    
-    // Group by columns (each column represents a digit position)
-    const columns: { [key: number]: Bubble[] } = {};
-    
-    idBubbles.forEach(bubble => {
-      const col = bubble.column;
-      if (col !== undefined) {
-        if (!columns[col]) columns[col] = [];
-        columns[col].push(bubble);
-      }
-    });
-    
-    // Extract digits from each column
-    let studentId = '';
-    for (let col = 0; col < 9; col++) {
-      if (columns[col]) {
-        for (const bubble of columns[col]) {
-          const confidence = isBubbleFilled(bubble, gray);
-          if (confidence > 0.4 && bubble.row !== undefined) {
-            studentId += bubble.row.toString();
-            break;
-          }
-        }
-      }
-    }
-    
-    console.log('🆔 Student ID detected:', studentId);
-    console.log('🔢 Total student ID bubbles processed:', idBubbles.length);
-    console.log('📊 Detection threshold used: 0.4');
-    return studentId || 'UNKNOWN';
-  };
-
-  const detectSection1Answers = (bubbles: Bubble[], gray: OpenCVMat): string[] => {
-    // Filter bubbles for Section 1 (Multiple choice A,B,C,D)
-    const section1Bubbles = bubbles.filter(b => b.section === 'section1');
-    
-    if (section1Bubbles.length === 0) {
-      return [];
-    }
-    
-    // Group by questions
-    const questions: { [key: number]: Bubble[] } = {};
-    
-    section1Bubbles.forEach(bubble => {
-      const questionNum = bubble.question;
-      if (questionNum !== undefined) {
-        if (!questions[questionNum]) questions[questionNum] = [];
-        questions[questionNum].push(bubble);
-      }
-    });
-    
-    const answers: string[] = [];
-    for (let q = 1; q <= 40; q++) {
-      if (questions[q]) {
-        let bestConfidence = 0;
-        let bestAnswer = '';
-        
-        for (const bubble of questions[q]) {
-          const confidence = isBubbleFilled(bubble, gray);
-          if (confidence > bestConfidence && confidence > 0.4 && bubble.option) {
-            bestConfidence = confidence;
-            bestAnswer = bubble.option;
-          }
-        }
-        
-        answers.push(bestAnswer);
-      } else {
-        answers.push('');
-      }
-    }
-    
-    console.log('📝 Section 1 answers detected:', answers.filter(a => a).length, 'of 40');
-    console.log('🔢 Total Section 1 bubbles processed:', section1Bubbles.length);
-    console.log('📊 Detection threshold used: 0.4');
-    console.log('🎯 Detected answers:', answers.slice(0, 10).join(', '), '...');
-    return answers;
-  };
-
-  const detectSection2Answers = (bubbles: Bubble[], gray: OpenCVMat): Array<{ a: boolean; b: boolean; c: boolean; d: boolean }> => {
-    // Filter bubbles for Section 2 (True/False with sub-options)
-    const section2Bubbles = bubbles.filter(b => b.section === 'section2');
-    
-    if (section2Bubbles.length === 0) {
-      return [];
-    }
-    
-    // Group by questions and sub-options
-    const questions: { [key: number]: { [key: string]: Bubble[] } } = {};
-    
-    section2Bubbles.forEach(bubble => {
-      const questionNum = bubble.question;
-      const subOption = bubble.subOption;
-      
-      if (questionNum !== undefined && subOption !== undefined) {
-        if (!questions[questionNum]) questions[questionNum] = {};
-        if (!questions[questionNum][subOption]) questions[questionNum][subOption] = [];
-        questions[questionNum][subOption].push(bubble);
-      }
-    });
-    
-    const answers: Array<{ a: boolean; b: boolean; c: boolean; d: boolean }> = [];
-    
-    for (let q = 1; q <= 8; q++) {
-      const answer = { a: false, b: false, c: false, d: false };
-      
-      if (questions[q]) {
-        ['a', 'b', 'c', 'd'].forEach(subOpt => {
-          if (questions[q][subOpt]) {
-            for (const bubble of questions[q][subOpt]) {
-              const confidence = isBubbleFilled(bubble, gray);
-              if (confidence > 0.4) {
-                const value = bubble.value; // true for "Đúng", false for "Sai"
-                if (value !== undefined) answer[subOpt as 'a' | 'b' | 'c' | 'd'] = value;
-                break;
-              }
-            }
-          }
-        });
-      }
-      
-      answers.push(answer);
-    }
-    
-    console.log('✅ Section 2 answers detected:', answers.filter(a => a.a || a.b || a.c || a.d).length, 'of 8');
-    return answers;
-  };
-
-  const detectSection3Answers = (bubbles: Bubble[], gray: OpenCVMat): string[] => {
-    // Filter bubbles for Section 3 (Numerical 0-9)
-    const section3Bubbles = bubbles.filter(b => b.section === 'section3');
-    
-    if (section3Bubbles.length === 0) {
-      return [];
-    }
-    
-    // Group by questions
-    const questions: { [key: number]: Bubble[] } = {};
-    
-    section3Bubbles.forEach(bubble => {
-      const questionNum = bubble.question;
-      if (questionNum !== undefined) {
-        if (!questions[questionNum]) questions[questionNum] = [];
-        questions[questionNum].push(bubble);
-      }
-    });
-    
-    const answers: string[] = [];
-    for (let q = 1; q <= 6; q++) {
-      if (questions[q]) {
-        let bestConfidence = 0;
-        let bestAnswer = '';
-        
-        for (const bubble of questions[q]) {
-          const confidence = isBubbleFilled(bubble, gray);
-          if (confidence > bestConfidence && confidence > 0.4) {
-            bestConfidence = confidence;
-            bestAnswer = bubble.digit?.toString() || '';
-          }
-        }
-        
-        answers.push(bestAnswer);
-      } else {
-        answers.push('');
-      }
-    }
-    
-    console.log('🔢 Section 3 answers detected:', answers.filter(a => a).length, 'of 6');
-    return answers;
-  };
-
+  }, [cvLoaded, imageFile, onProcessingComplete, processWithNewOpenCV]);
 
   useEffect(() => {
     if (cvLoaded && imageFile) {
@@ -1106,41 +503,187 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto mb-2"></div>
             <p className="text-sm text-gray-600">Đang xử lý ảnh...</p>
-            {process.env.NODE_ENV === 'development' && (
-              <p className="text-xs text-blue-500 mt-1">🚀 Dev mode: Using default answers</p>
+            {processingProgress && (
+              <div className="mt-3 max-w-md mx-auto">
+                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <span>Step {processingProgress.stepIndex + 1} of {processingProgress.totalSteps}</span>
+                  <span>{Math.round(((processingProgress.stepIndex + 1) / processingProgress.totalSteps) * 100)}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                    style={{ width: `${((processingProgress.stepIndex + 1) / processingProgress.totalSteps) * 100}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs text-gray-600">{processingProgress.currentStep}</p>
+                {processingProgress.error && (
+                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+                    ❌ Error at step: {processingProgress.error}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
       </div>
       
-      {debugImageUrl && (
+      {(processingSteps || processingProgress?.error) && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <h3 className="text-lg font-semibold text-gray-900 mb-3">Debug Visualization</h3>
-          <div className="flex flex-col items-center space-y-3">
-            <img 
-              src={debugImageUrl} 
-              alt="Debug visualization showing detected bubbles"
-              className="max-w-full h-auto border border-gray-300 rounded"
-              style={{ maxHeight: '600px' }}
-            />
-            <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
-              <div className="font-medium mb-2">Legend:</div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full border-2 border-pink-400"></div>
-                  <span>All available positions</span>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            OpenCV Processing Steps
+            {processingProgress?.error && (
+              <span className="ml-2 text-sm font-normal text-red-600">
+                (Failed at step {processingProgress.stepIndex + 1})
+              </span>
+            )}
+          </h3>
+          
+          {processingProgress?.error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-center">
+                <span className="text-red-600 mr-2">⚠️</span>
+                <div>
+                  <div className="font-medium text-red-800">Processing Failed</div>
+                  <div className="text-sm text-red-700">{processingProgress.error}</div>
+                  <div className="text-xs text-red-600 mt-1">
+                    Showing partial results up to step {processingProgress.stepIndex + 1}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full border-2 border-blue-500"></div>
-                  <span>Student ID bubbles</span>
+              </div>
+            </div>
+          )}
+          
+          {processingSteps && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {processingSteps.original && (
+                <div className="space-y-2">
+                  <h4 className="font-medium text-gray-700">1. Original Image</h4>
+                  <img 
+                    src={processingSteps.original} 
+                    alt="Original uploaded image"
+                    className="w-full h-auto border border-gray-300 rounded"
+                    style={{ maxHeight: '180px', objectFit: 'contain' }}
+                  />
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full border-2 border-green-500"></div>
-                  <span>Correct answers</span>
+              )}
+            
+              {processingSteps.grayscale && (
+                <div className="space-y-2">
+                  <h4 className="font-medium text-gray-700">2. Grayscale</h4>
+                  <img 
+                    src={processingSteps.grayscale} 
+                    alt="Grayscale conversion"
+                    className="w-full h-auto border border-gray-300 rounded"
+                    style={{ maxHeight: '180px', objectFit: 'contain' }}
+                  />
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full border-2 border-red-500"></div>
-                  <span>Wrong answers</span>
+              )}
+              
+              {processingSteps.blur && (
+                <div className="space-y-2">
+                  <h4 className="font-medium text-gray-700">3. Gaussian Blur</h4>
+                  <img 
+                    src={processingSteps.blur} 
+                    alt="Gaussian blur for noise reduction"
+                    className="w-full h-auto border border-gray-300 rounded"
+                    style={{ maxHeight: '180px', objectFit: 'contain' }}
+                  />
+                </div>
+              )}
+              
+              {processingSteps.edges && (
+                <div className="space-y-2">
+                  <h4 className="font-medium text-gray-700">4. Edge Detection</h4>
+                  <img 
+                    src={processingSteps.edges} 
+                    alt="Canny edge detection"
+                    className="w-full h-auto border border-gray-300 rounded"
+                    style={{ maxHeight: '180px', objectFit: 'contain' }}
+                  />
+                </div>
+              )}
+              
+              {processingSteps.contours && (
+                <div className="space-y-2">
+                  <h4 className="font-medium text-gray-700">5. Contour Detection</h4>
+                  <img 
+                    src={processingSteps.contours} 
+                    alt="Detected contours visualization"
+                    className="w-full h-auto border border-gray-300 rounded"
+                    style={{ maxHeight: '180px', objectFit: 'contain' }}
+                  />
+                </div>
+              )}
+              
+              {processingSteps.warped && (
+                <div className="space-y-2">
+                  <h4 className="font-medium text-gray-700">6. Perspective Corrected</h4>
+                  <img 
+                    src={processingSteps.warped} 
+                    alt="Perspective corrected answer sheet"
+                    className="w-full h-auto border border-gray-300 rounded"
+                    style={{ maxHeight: '180px', objectFit: 'contain' }}
+                  />
+                </div>
+              )}
+              
+              {processingSteps.threshold && (
+                <div className="space-y-2">
+                  <h4 className="font-medium text-gray-700">7. Binary Threshold</h4>
+                  <img 
+                    src={processingSteps.threshold} 
+                    alt="Binary threshold for bubble detection"
+                    className="w-full h-auto border border-gray-300 rounded"
+                    style={{ maxHeight: '180px', objectFit: 'contain' }}
+                  />
+                </div>
+              )}
+              
+              {processingSteps.final && (
+                <div className="space-y-2">
+                  <h4 className="font-medium text-gray-700">8. Final Result</h4>
+                  <img 
+                    src={processingSteps.final} 
+                    alt="Final result with answer markings"
+                    className="w-full h-auto border border-gray-300 rounded"
+                    style={{ maxHeight: '180px', objectFit: 'contain' }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+          
+          <div className="mt-6 text-sm text-gray-600 bg-gray-50 p-4 rounded-lg">
+            <div className="font-medium mb-3">Processing Pipeline:</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <div className="font-medium text-gray-700 mb-2">Step Details:</div>
+                <ul className="space-y-1 text-xs">
+                  <li><span className="font-medium">1. Original:</span> Raw uploaded image</li>
+                  <li><span className="font-medium">2. Grayscale:</span> Convert to single channel</li>
+                  <li><span className="font-medium">3. Blur:</span> Gaussian blur (5×5 kernel, σ=1)</li>
+                  <li><span className="font-medium">4. Edges:</span> Canny edge detection (10-70 threshold)</li>
+                  <li><span className="font-medium">5. Contours:</span> Find and draw all contours</li>
+                  <li><span className="font-medium">6. Warped:</span> Perspective correction to 700×700</li>
+                  <li><span className="font-medium">7. Threshold:</span> Binary image (threshold=170)</li>
+                  <li><span className="font-medium">8. Final:</span> Answer detection + grid overlay</li>
+                </ul>
+              </div>
+              <div>
+                <div className="font-medium text-gray-700 mb-2">Legend:</div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full border-2 border-green-500"></div>
+                    <span>Correct answers</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full border-2 border-red-500"></div>
+                    <span>Wrong answers</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full border-2 border-yellow-500"></div>
+                    <span>Grid lines</span>
+                  </div>
                 </div>
               </div>
             </div>
