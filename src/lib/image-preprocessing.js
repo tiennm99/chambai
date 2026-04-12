@@ -1,14 +1,14 @@
 // Image preprocessing: grayscale conversion, thresholding, noise reduction
-import type { OpenCVMat } from '@/types/opencv';
+/** @typedef {import('./types.js').OpenCVMat} OpenCVMat */
+/** @typedef {import('./types.js').Bubble} Bubble */
 
 /**
  * Convert image to grayscale and apply adaptive thresholding.
  * Uses simple, reliable preprocessing that works in opencv.js browser build.
+ * @param {OpenCVMat} src - Source RGBA image matrix
+ * @returns {{ gray: OpenCVMat, thresh: OpenCVMat }}
  */
-export function preprocessForBubbleDetection(src: OpenCVMat): {
-  gray: OpenCVMat;
-  thresh: OpenCVMat;
-} {
+export function preprocessForBubbleDetection(src) {
   const cv = window.cv;
 
   // Convert to grayscale
@@ -46,11 +46,11 @@ export function preprocessForBubbleDetection(src: OpenCVMat): {
 /**
  * Check how filled a bubble region is by analyzing pixel intensity.
  * Returns a confidence score 0.0 (empty) to 1.0 (fully filled).
+ * @param {{ x: number, y: number, width: number, height: number }} bubble
+ * @param {OpenCVMat} gray - Grayscale image matrix
+ * @returns {number}
  */
-export function measureBubbleFill(
-  bubble: { x: number; y: number; width: number; height: number },
-  gray: OpenCVMat
-): number {
+export function measureBubbleFill(bubble, gray) {
   const cv = window.cv;
 
   try {

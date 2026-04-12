@@ -1,7 +1,9 @@
 // Draw debug overlay on processed answer sheet images
 // Shows detected bubbles, answers, and confidence levels
-import type { OpenCVMat } from '@/types/opencv';
-import type { Bubble, ProcessingResult, TestConfig } from '@/types';
+/** @typedef {import('./types.js').OpenCVMat} OpenCVMat */
+/** @typedef {import('./types.js').Bubble} Bubble */
+/** @typedef {import('./types.js').ProcessingResult} ProcessingResult */
+/** @typedef {import('./types.js').TestConfig} TestConfig */
 import { measureBubbleFill } from './image-preprocessing';
 
 const COLORS = {
@@ -16,14 +18,14 @@ const COLORS = {
 /**
  * Create a debug visualization canvas showing all detected bubbles and answers.
  * Returns a data URL of the annotated image.
+ * @param {HTMLCanvasElement} originalCanvas
+ * @param {Bubble[]} bubbles
+ * @param {ProcessingResult} result
+ * @param {TestConfig} testConfig
+ * @param {OpenCVMat} gray
+ * @returns {string}
  */
-export function createDebugVisualization(
-  originalCanvas: HTMLCanvasElement,
-  bubbles: Bubble[],
-  result: ProcessingResult,
-  testConfig: TestConfig,
-  gray: OpenCVMat
-): string {
+export function createDebugVisualization(originalCanvas, bubbles, result, testConfig, gray) {
   const debugCanvas = document.createElement('canvas');
   const ctx = debugCanvas.getContext('2d');
   if (!ctx) return '';
@@ -54,7 +56,11 @@ export function createDebugVisualization(
   return debugCanvas.toDataURL();
 }
 
-function drawAllPositions(ctx: CanvasRenderingContext2D, bubbles: Bubble[]) {
+/**
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Bubble[]} bubbles
+ */
+function drawAllPositions(ctx, bubbles) {
   ctx.strokeStyle = COLORS.allPositions;
   ctx.lineWidth = 1;
 
@@ -69,13 +75,14 @@ function drawAllPositions(ctx: CanvasRenderingContext2D, bubbles: Bubble[]) {
   }
 }
 
-function drawIdBubbles(
-  ctx: CanvasRenderingContext2D,
-  bubbles: Bubble[],
-  gray: OpenCVMat,
-  section: string,
-  color: string
-) {
+/**
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Bubble[]} bubbles
+ * @param {OpenCVMat} gray
+ * @param {string} section
+ * @param {string} color
+ */
+function drawIdBubbles(ctx, bubbles, gray, section, color) {
   const sectionBubbles = bubbles.filter((b) => b.section === section);
 
   for (const bubble of sectionBubbles) {
@@ -94,13 +101,14 @@ function drawIdBubbles(
   }
 }
 
-function drawPhanIAnswers(
-  ctx: CanvasRenderingContext2D,
-  bubbles: Bubble[],
-  result: ProcessingResult,
-  config: TestConfig,
-  gray: OpenCVMat
-) {
+/**
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Bubble[]} bubbles
+ * @param {ProcessingResult} result
+ * @param {TestConfig} config
+ * @param {OpenCVMat} gray
+ */
+function drawPhanIAnswers(ctx, bubbles, result, config, gray) {
   const section1 = bubbles.filter((b) => b.section === 'section1');
 
   for (const bubble of section1) {
@@ -128,17 +136,18 @@ function drawPhanIAnswers(
   }
 }
 
-function drawPhanIIAnswers(
-  ctx: CanvasRenderingContext2D,
-  bubbles: Bubble[],
-  result: ProcessingResult,
-  config: TestConfig
-) {
+/**
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Bubble[]} bubbles
+ * @param {ProcessingResult} result
+ * @param {TestConfig} config
+ */
+function drawPhanIIAnswers(ctx, bubbles, result, config) {
   const section2 = bubbles.filter((b) => b.section === 'section2');
 
   for (const bubble of section2) {
     const q = bubble.question;
-    const sub = bubble.subOption as 'a' | 'b' | 'c' | 'd' | undefined;
+    const sub = bubble.subOption;
     if (!q || !sub || q > result.phanII.length) continue;
 
     const detected = result.phanII[q - 1];
@@ -160,13 +169,14 @@ function drawPhanIIAnswers(
   }
 }
 
-function drawPhanIIIAnswers(
-  ctx: CanvasRenderingContext2D,
-  bubbles: Bubble[],
-  result: ProcessingResult,
-  config: TestConfig,
-  gray: OpenCVMat
-) {
+/**
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Bubble[]} bubbles
+ * @param {ProcessingResult} result
+ * @param {TestConfig} config
+ * @param {OpenCVMat} gray
+ */
+function drawPhanIIIAnswers(ctx, bubbles, result, config, gray) {
   const section3 = bubbles.filter((b) => b.section === 'section3');
 
   for (const bubble of section3) {
@@ -194,7 +204,8 @@ function drawPhanIIIAnswers(
   }
 }
 
-function drawLegend(ctx: CanvasRenderingContext2D) {
+/** @param {CanvasRenderingContext2D} ctx */
+function drawLegend(ctx) {
   const entries = [
     { color: COLORS.allPositions, label: 'All Positions' },
     { color: COLORS.studentId, label: 'Student ID' },

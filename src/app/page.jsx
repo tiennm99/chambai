@@ -7,7 +7,7 @@ import UploadPage from '@/components/UploadPage';
 import ResultsPage from '@/components/ResultsPage';
 
 export default function Home() {
-  const [currentPage, setCurrentPage] = useState<'config' | 'upload' | 'results'>('config');
+  const [currentPage, setCurrentPage] = useState('config');
 
   const renderPage = () => {
     switch (currentPage) {
@@ -33,12 +33,12 @@ export default function Home() {
             Tự động nhận diện và chấm điểm bài thi trắc nghiệm tiếng Việt
           </p>
         </div>
-        
-        <Navigation 
-          currentPage={currentPage} 
-          onPageChange={setCurrentPage} 
+
+        <Navigation
+          currentPage={currentPage}
+          onPageChange={setCurrentPage}
         />
-        
+
         <div className="mt-8">
           {renderPage()}
         </div>

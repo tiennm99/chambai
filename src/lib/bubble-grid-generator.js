@@ -1,20 +1,25 @@
 // Generate bubble grid positions based on Vietnamese THPT answer sheet layout
 // Layout reference: Công văn 1239/BGDĐT (2025 format)
 // Sections: Student ID (8 digits) + Exam Code (4 digits) + Phần I + Phần II + Phần III
-import type { Bubble, MarkerDetectionResult } from '@/types';
+/** @typedef {import('./types.js').Bubble} Bubble */
+/** @typedef {import('./types.js').MarkerDetectionResult} MarkerDetectionResult */
+/** @typedef {import('./types.js').BoundingBox} BoundingBox */
 
-interface SheetLayout {
-  // All values are ratios (0-1) relative to the sheet bounding box
-  studentId: { x: number; y: number; w: number; h: number; cols: number; rows: number };
-  examCode: { x: number; y: number; w: number; h: number; cols: number; rows: number };
-  phanI: { x: number; y: number; w: number; h: number; questionCols: number; questionsPerCol: number };
-  phanII: { x: number; y: number; w: number; h: number; questions: number; subOptions: number };
-  phanIII: { x: number; y: number; w: number; h: number; questions: number; digits: number };
-}
+/**
+ * @typedef {object} SheetArea
+ * @property {number} x
+ * @property {number} y
+ * @property {number} w
+ * @property {number} h
+ */
+
+/**
+ * @typedef {(rx: number, ry: number) => { x: number, y: number }} AbsFn
+ */
 
 // Vietnamese THPT answer sheet proportional layout (2025 format)
 // These ratios are relative to the answer area bounded by corner markers
-const SHEET_LAYOUT: SheetLayout = {
+const SHEET_LAYOUT = {
   // Student ID: top-right area, 8 columns x 10 rows (digits 0-9)
   studentId: { x: 0.65, y: 0.02, w: 0.25, h: 0.18, cols: 8, rows: 10 },
   // Exam code: next to student ID, 4 columns x 10 rows
@@ -29,12 +34,12 @@ const SHEET_LAYOUT: SheetLayout = {
 
 /**
  * Generate all bubble positions based on detected markers and known sheet layout.
+ * @param {MarkerDetectionResult} markers
+ * @param {number} imageWidth
+ * @param {number} imageHeight
+ * @returns {Bubble[]}
  */
-export function generateBubbleGrid(
-  markers: MarkerDetectionResult,
-  imageWidth: number,
-  imageHeight: number
-): Bubble[] {
+export function generateBubbleGrid(markers, imageWidth, imageHeight) {
   const box = markers.boundingBox ?? {
     left: imageWidth * 0.03,
     top: imageHeight * 0.03,
@@ -44,11 +49,13 @@ export function generateBubbleGrid(
     bottom: imageHeight * 0.97,
   };
 
-  const bubbles: Bubble[] = [];
+  /** @type {Bubble[]} */
+  const bubbles = [];
   const layout = SHEET_LAYOUT;
 
   // Helper: convert layout ratios to absolute pixel positions
-  const abs = (ratioX: number, ratioY: number) => ({
+  /** @type {AbsFn} */
+  const abs = (ratioX, ratioY) => ({
     x: box.left + ratioX * box.width,
     y: box.top + ratioY * box.height,
   });
@@ -62,21 +69,23 @@ export function generateBubbleGrid(
   return bubbles;
 }
 
-type AbsFn = (rx: number, ry: number) => { x: number; y: number };
-type Box = { width: number; height: number };
-
 const BUBBLE_SIZE_RATIO = 0.012; // bubble size relative to sheet width
 
-function bubbleSize(box: Box): number {
+/**
+ * @param {{ width: number }} box
+ * @returns {number}
+ */
+function bubbleSize(box) {
   return Math.max(8, Math.round(box.width * BUBBLE_SIZE_RATIO));
 }
 
-function generateStudentIdBubbles(
-  bubbles: Bubble[],
-  area: SheetLayout['studentId'],
-  abs: AbsFn,
-  box: Box
-) {
+/**
+ * @param {Bubble[]} bubbles
+ * @param {typeof SHEET_LAYOUT.studentId} area
+ * @param {AbsFn} abs
+ * @param {{ width: number }} box
+ */
+function generateStudentIdBubbles(bubbles, area, abs, box) {
   const size = bubbleSize(box);
   const colSpacing = area.w / area.cols;
   const rowSpacing = area.h / (area.rows + 1); // +1 for header space
@@ -102,12 +111,13 @@ function generateStudentIdBubbles(
   }
 }
 
-function generateExamCodeBubbles(
-  bubbles: Bubble[],
-  area: SheetLayout['examCode'],
-  abs: AbsFn,
-  box: Box
-) {
+/**
+ * @param {Bubble[]} bubbles
+ * @param {typeof SHEET_LAYOUT.examCode} area
+ * @param {AbsFn} abs
+ * @param {{ width: number }} box
+ */
+function generateExamCodeBubbles(bubbles, area, abs, box) {
   const size = bubbleSize(box);
   const colSpacing = area.w / area.cols;
   const rowSpacing = area.h / (area.rows + 1);
@@ -133,12 +143,13 @@ function generateExamCodeBubbles(
   }
 }
 
-function generatePhanIBubbles(
-  bubbles: Bubble[],
-  area: SheetLayout['phanI'],
-  abs: AbsFn,
-  box: Box
-) {
+/**
+ * @param {Bubble[]} bubbles
+ * @param {typeof SHEET_LAYOUT.phanI} area
+ * @param {AbsFn} abs
+ * @param {{ width: number }} box
+ */
+function generatePhanIBubbles(bubbles, area, abs, box) {
   const size = bubbleSize(box);
   const { questionCols, questionsPerCol } = area;
   const colGroupWidth = area.w / questionCols;
@@ -172,12 +183,13 @@ function generatePhanIBubbles(
   }
 }
 
-function generatePhanIIBubbles(
-  bubbles: Bubble[],
-  area: SheetLayout['phanII'],
-  abs: AbsFn,
-  box: Box
-) {
+/**
+ * @param {Bubble[]} bubbles
+ * @param {typeof SHEET_LAYOUT.phanII} area
+ * @param {AbsFn} abs
+ * @param {{ width: number }} box
+ */
+function generatePhanIIBubbles(bubbles, area, abs, box) {
   const size = bubbleSize(box);
   const { questions, subOptions } = area;
   // Layout: 4 questions per row, 2 rows
@@ -233,12 +245,13 @@ function generatePhanIIBubbles(
   }
 }
 
-function generatePhanIIIBubbles(
-  bubbles: Bubble[],
-  area: SheetLayout['phanIII'],
-  abs: AbsFn,
-  box: Box
-) {
+/**
+ * @param {Bubble[]} bubbles
+ * @param {typeof SHEET_LAYOUT.phanIII} area
+ * @param {AbsFn} abs
+ * @param {{ width: number }} box
+ */
+function generatePhanIIIBubbles(bubbles, area, abs, box) {
   const size = bubbleSize(box);
   const { questions, digits } = area;
   const colWidth = area.w / questions;

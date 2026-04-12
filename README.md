@@ -23,7 +23,7 @@ A Next.js web application for automatically scoring Vietnamese multiple choice t
 
 ## Tech Stack
 
-- **Frontend**: Next.js 15 with TypeScript
+- **Frontend**: Next.js 15
 - **Styling**: Tailwind CSS
 - **Image Processing**: OpenCV.js
 - **Data Export**: CSV generation
@@ -65,63 +65,47 @@ A Next.js web application for automatically scoring Vietnamese multiple choice t
 ```
 src/
 ├── app/
-│   ├── layout.tsx              # Root layout with OpenCV.js integration
-│   ├── page.tsx                # Main application page
+│   ├── layout.jsx              # Root layout with OpenCV.js integration
+│   ├── page.jsx                # Main application page
 │   └── globals.css             # Global styles
 ├── components/
-│   ├── Navigation.tsx          # Navigation between pages
-│   ├── ConfigurationPage.tsx   # Test configuration + scoring config
-│   ├── UploadPage.tsx          # Image upload with thumbnails and progress
-│   ├── ResultsPage.tsx         # Results table with sorting/filtering/export
-│   └── ImageProcessor.tsx      # Orchestrator for the detection pipeline
-├── lib/
-│   ├── image-preprocessing.ts  # Grayscale, thresholding, bubble fill measurement
-│   ├── marker-detection.ts     # Corner marker detection for alignment
-│   ├── bubble-grid-generator.ts # Vietnamese THPT answer sheet layout
-│   ├── answer-detection.ts     # Student ID, exam code, answer detection
-│   ├── debug-visualization.ts  # Debug overlay drawing
-│   └── scoring.ts              # Weighted scoring (Phần I/II/III)
-└── types/
-    ├── index.ts                # Shared types (TestConfig, StudentResult, etc.)
-    └── opencv.ts               # OpenCV.js type declarations
+│   ├── Navigation.jsx          # Navigation between pages
+│   ├── ConfigurationPage.jsx   # Test configuration + scoring config
+│   ├── UploadPage.jsx          # Image upload with thumbnails and progress
+│   ├── ResultsPage.jsx         # Results table with sorting/filtering/export
+│   └── ImageProcessor.jsx      # Orchestrator for the detection pipeline
+└── lib/
+    ├── image-preprocessing.js  # Grayscale, thresholding, bubble fill measurement
+    ├── marker-detection.js     # Corner marker detection for alignment
+    ├── bubble-grid-generator.js # Vietnamese THPT answer sheet layout
+    ├── answer-detection.js     # Student ID, exam code, answer detection
+    ├── debug-visualization.js  # Debug overlay drawing
+    └── scoring.js              # Weighted scoring (Phần I/II/III)
 ```
 
 ## Data Structure
 
 ### Test Configuration
-```typescript
-interface TestConfig {
-  phanI: {
-    questionCount: number;
-    answers: string[];
-  };
-  phanII: {
-    questionCount: number;
-    answers: Array<{ a: boolean; b: boolean; c: boolean; d: boolean }>;
-  };
-  phanIII: {
-    questionCount: number;
-    answers: string[];
-  };
+```js
+// TestConfig shape
+{
+  phanI: { questionCount: 40, answers: ['A', 'B', ...] },
+  phanII: { questionCount: 8, answers: [{ a: true, b: false, c: true, d: false }, ...] },
+  phanIII: { questionCount: 6, answers: ['42', '7', ...] },
 }
 ```
 
 ### Student Results
-```typescript
-interface StudentResult {
-  id: string;
-  fileName: string;
-  studentId: string;
-  phanI: string[];
-  phanII: Array<{ a: boolean; b: boolean; c: boolean; d: boolean }>;
-  phanIII: string[];
-  score: {
-    phanI: number;
-    phanII: number;
-    phanIII: number;
-    total: number;
-    percentage: number;
-  };
+```js
+// StudentResult shape
+{
+  id: 'student_123',
+  fileName: 'scan_001.jpg',
+  studentId: '12345678',
+  phanI: ['A', 'B', ...],
+  phanII: [{ a: true, b: false, c: true, d: false }, ...],
+  phanIII: ['42', '7', ...],
+  score: { phanI: 8, phanII: 6, phanIII: 3, total: 17, percentage: 85 },
 }
 ```
 

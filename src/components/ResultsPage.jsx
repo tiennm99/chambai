@@ -1,18 +1,14 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import type { StudentResult, TestConfig } from '@/types';
 import { calculateScore } from '@/lib/scoring';
 
-type SortKey = 'studentId' | 'total' | 'percentage';
-type SortDir = 'asc' | 'desc';
-
 export default function ResultsPage() {
-  const [results, setResults] = useState<StudentResult[]>([]);
-  const [testConfig, setTestConfig] = useState<TestConfig | null>(null);
-  const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
-  const [sortKey, setSortKey] = useState<SortKey>('studentId');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [results, setResults] = useState([]);
+  const [testConfig, setTestConfig] = useState(null);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [sortKey, setSortKey] = useState('studentId');
+  const [sortDir, setSortDir] = useState('asc');
   const [filterText, setFilterText] = useState('');
 
   useEffect(() => {
@@ -20,8 +16,8 @@ export default function ResultsPage() {
     const savedConfig = localStorage.getItem('testConfig');
 
     if (savedResults && savedConfig) {
-      const resultsData: StudentResult[] = JSON.parse(savedResults);
-      const configData: TestConfig = JSON.parse(savedConfig);
+      const resultsData = JSON.parse(savedResults);
+      const configData = JSON.parse(savedConfig);
       setTestConfig(configData);
 
       const scoredResults = resultsData.map((r) => ({
@@ -32,7 +28,7 @@ export default function ResultsPage() {
     }
   }, []);
 
-  const handleSort = (key: SortKey) => {
+  const handleSort = (key) => {
     if (sortKey === key) {
       setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
     } else {
@@ -102,7 +98,7 @@ export default function ResultsPage() {
   };
 
   const selectedData = results.find((r) => r.id === selectedStudent);
-  const sortArrow = (key: SortKey) => sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
+  const sortArrow = (key) => sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -208,15 +204,7 @@ export default function ResultsPage() {
   );
 }
 
-function StudentDetailModal({
-  student,
-  testConfig,
-  onClose,
-}: {
-  student: StudentResult;
-  testConfig: TestConfig | null;
-  onClose: () => void;
-}) {
+function StudentDetailModal({ student, testConfig, onClose }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto m-4">
@@ -270,7 +258,7 @@ function StudentDetailModal({
                 {student.phanII.map((answer, i) => (
                   <div key={i} className="border rounded p-2 text-sm">
                     <span className="font-medium">Câu {i + 1}: </span>
-                    {(['a', 'b', 'c', 'd'] as const).map((opt) => {
+                    {['a', 'b', 'c', 'd'].map((opt) => {
                       const correct = testConfig?.phanII.answers[i]?.[opt];
                       const isCorrect = answer[opt] === correct;
                       return (
@@ -319,11 +307,11 @@ function StudentDetailModal({
 
 // --- Small UI components ---
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({ children }) {
   return <th className="px-3 py-2 text-left text-sm font-medium text-gray-700">{children}</th>;
 }
 
-function ThBtn({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+function ThBtn({ children, onClick }) {
   return (
     <th className="px-3 py-2 text-left text-sm font-medium text-gray-700 cursor-pointer hover:text-blue-600" onClick={onClick}>
       {children}
@@ -331,11 +319,11 @@ function ThBtn({ children, onClick }: { children: React.ReactNode; onClick: () =
   );
 }
 
-function Td({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+function Td({ children, className = '' }) {
   return <td className={`px-3 py-2 text-sm text-gray-900 ${className}`}>{children}</td>;
 }
 
-function ScoreBadge({ percentage }: { percentage: number }) {
+function ScoreBadge({ percentage }) {
   const color = percentage >= 80 ? 'bg-green-100 text-green-800' :
                 percentage >= 50 ? 'bg-yellow-100 text-yellow-800' :
                 'bg-red-100 text-red-800';
@@ -346,7 +334,7 @@ function ScoreBadge({ percentage }: { percentage: number }) {
   );
 }
 
-function ScoreCard({ label, score }: { label: string; score: number }) {
+function ScoreCard({ label, score }) {
   return (
     <div className="bg-gray-50 rounded-lg p-3 text-center">
       <div className="text-sm text-gray-500">{label}</div>

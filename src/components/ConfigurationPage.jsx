@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { TestConfig } from '@/types';
 
 export default function ConfigurationPage() {
-  const [config, setConfig] = useState<TestConfig>({
+  const [config, setConfig] = useState({
     phanI: { questionCount: 40, answers: [] },
     phanII: { questionCount: 8, answers: [] },
     phanIII: { questionCount: 6, answers: [] },
@@ -14,14 +13,14 @@ export default function ConfigurationPage() {
       phanIII: { pointsPerQuestion: 0.5 },
     },
   });
-  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [statusMessage, setStatusMessage] = useState(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('testConfig');
     if (saved) setConfig(JSON.parse(saved));
   }, []);
 
-  const showStatus = (type: 'success' | 'error', text: string) => {
+  const showStatus = (type, text) => {
     setStatusMessage({ type, text });
     setTimeout(() => setStatusMessage(null), 3000);
   };
@@ -48,13 +47,13 @@ export default function ConfigurationPage() {
     }
   };
 
-  const updatePhanIAnswer = (index: number, answer: string) => {
+  const updatePhanIAnswer = (index, answer) => {
     const newAnswers = [...config.phanI.answers];
     newAnswers[index] = answer;
     setConfig({ ...config, phanI: { ...config.phanI, answers: newAnswers } });
   };
 
-  const updatePhanIIAnswer = (questionIndex: number, option: 'a' | 'b' | 'c' | 'd', value: boolean) => {
+  const updatePhanIIAnswer = (questionIndex, option, value) => {
     const newAnswers = [...config.phanII.answers];
     if (!newAnswers[questionIndex]) {
       newAnswers[questionIndex] = { a: false, b: false, c: false, d: false };
@@ -63,13 +62,13 @@ export default function ConfigurationPage() {
     setConfig({ ...config, phanII: { ...config.phanII, answers: newAnswers } });
   };
 
-  const updatePhanIIIAnswer = (index: number, answer: string) => {
+  const updatePhanIIIAnswer = (index, answer) => {
     const newAnswers = [...config.phanIII.answers];
     newAnswers[index] = answer;
     setConfig({ ...config, phanIII: { ...config.phanIII, answers: newAnswers } });
   };
 
-  const updateQuestionCount = (section: 'phanI' | 'phanII' | 'phanIII', count: number) => {
+  const updateQuestionCount = (section, count) => {
     setConfig({ ...config, [section]: { ...config[section], questionCount: count } });
   };
 
@@ -119,7 +118,7 @@ export default function ConfigurationPage() {
                 value={config.scoring?.phanI.pointsPerQuestion ?? 0.25}
                 onChange={(e) => setConfig({
                   ...config,
-                  scoring: { ...config.scoring!, phanI: { pointsPerQuestion: parseFloat(e.target.value) || 0 } },
+                  scoring: { ...config.scoring, phanI: { pointsPerQuestion: parseFloat(e.target.value) || 0 } },
                 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
@@ -133,7 +132,7 @@ export default function ConfigurationPage() {
                 value={config.scoring?.phanII.pointsPerQuestion ?? 0.25}
                 onChange={(e) => setConfig({
                   ...config,
-                  scoring: { ...config.scoring!, phanII: { ...config.scoring!.phanII, pointsPerQuestion: parseFloat(e.target.value) || 0 } },
+                  scoring: { ...config.scoring, phanII: { ...config.scoring.phanII, pointsPerQuestion: parseFloat(e.target.value) || 0 } },
                 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
@@ -147,7 +146,7 @@ export default function ConfigurationPage() {
                 value={config.scoring?.phanIII.pointsPerQuestion ?? 0.5}
                 onChange={(e) => setConfig({
                   ...config,
-                  scoring: { ...config.scoring!, phanIII: { pointsPerQuestion: parseFloat(e.target.value) || 0 } },
+                  scoring: { ...config.scoring, phanIII: { pointsPerQuestion: parseFloat(e.target.value) || 0 } },
                 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
@@ -212,7 +211,7 @@ export default function ConfigurationPage() {
               <div key={i} className="border border-gray-200 rounded-lg p-4">
                 <h4 className="font-medium mb-3">Câu {i + 1}:</h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {(['a', 'b', 'c', 'd'] as const).map((option) => (
+                  {['a', 'b', 'c', 'd'].map((option) => (
                     <div key={option} className="flex items-center gap-2">
                       <span className="text-sm font-medium w-4">{option.toUpperCase()}:</span>
                       <div className="flex gap-1">

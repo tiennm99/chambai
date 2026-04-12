@@ -1,29 +1,26 @@
 // Detect corner reference markers (black squares) on the answer sheet
 // These markers are used for perspective correction and alignment
-import type { OpenCVMat } from '@/types/opencv';
-import type { MarkerDetectionResult, Point } from '@/types';
+/** @typedef {import('./types.js').OpenCVMat} OpenCVMat */
+/** @typedef {import('./types.js').Point} Point */
+/** @typedef {import('./types.js').MarkerDetectionResult} MarkerDetectionResult */
 
 /**
  * Detect the 4 corner markers on a Vietnamese THPT answer sheet.
  * Corner markers are solid black squares used for alignment/deskewing.
+ * @param {OpenCVMat} thresh - Thresholded binary image
+ * @param {number} imageWidth
+ * @param {number} imageHeight
+ * @returns {MarkerDetectionResult}
  */
-export function detectCornerMarkers(
-  thresh: OpenCVMat,
-  imageWidth: number,
-  imageHeight: number
-): MarkerDetectionResult {
+export function detectCornerMarkers(thresh, imageWidth, imageHeight) {
   const cv = window.cv;
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
 
   cv.findContours(thresh, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
 
-  const candidates: Array<{
-    center: Point;
-    area: number;
-    aspectRatio: number;
-    rect: { x: number; y: number; width: number; height: number };
-  }> = [];
+  /** @type {Array<{ center: Point, area: number, aspectRatio: number, rect: { x: number, y: number, width: number, height: number } }>} */
+  const candidates = [];
 
   const imageArea = imageWidth * imageHeight;
 
@@ -102,12 +99,12 @@ export function detectCornerMarkers(
 
 /**
  * From candidates, pick the 4 that are closest to each image corner.
+ * @param {Array<{ center: Point, area: number }>} candidates
+ * @param {number} imageWidth
+ * @param {number} imageHeight
+ * @returns {{ topLeft: Point, topRight: Point, bottomLeft: Point, bottomRight: Point } | null}
  */
-function findFourCorners(
-  candidates: Array<{ center: Point; area: number }>,
-  imageWidth: number,
-  imageHeight: number
-): { topLeft: Point; topRight: Point; bottomLeft: Point; bottomRight: Point } | null {
+function findFourCorners(candidates, imageWidth, imageHeight) {
   if (candidates.length < 4) return null;
 
   const imageCorners = [
@@ -117,8 +114,10 @@ function findFourCorners(
     { x: imageWidth, y: imageHeight },
   ];
 
-  const assigned: Point[] = [];
-  const used = new Set<number>();
+  /** @type {Point[]} */
+  const assigned = [];
+  /** @type {Set<number>} */
+  const used = new Set();
 
   for (const corner of imageCorners) {
     let bestDist = Infinity;

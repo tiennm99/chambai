@@ -1,14 +1,18 @@
 // Detect student answers by analyzing bubble fill levels
-import type { OpenCVMat } from '@/types/opencv';
-import type { Bubble, TrueFalseAnswer } from '@/types';
+/** @typedef {import('./types.js').OpenCVMat} OpenCVMat */
+/** @typedef {import('./types.js').Bubble} Bubble */
+/** @typedef {import('./types.js').TrueFalseAnswer} TrueFalseAnswer */
 import { measureBubbleFill } from './image-preprocessing';
 
 const FILL_THRESHOLD = 0.35;
 
 /**
  * Detect student ID from bubble grid (8 digits, each column has rows 0-9).
+ * @param {Bubble[]} bubbles
+ * @param {OpenCVMat} gray
+ * @returns {string}
  */
-export function detectStudentId(bubbles: Bubble[], gray: OpenCVMat): string {
+export function detectStudentId(bubbles, gray) {
   const idBubbles = bubbles.filter((b) => b.section === 'studentId');
   if (idBubbles.length === 0) return 'UNKNOWN';
 
@@ -29,8 +33,11 @@ export function detectStudentId(bubbles: Bubble[], gray: OpenCVMat): string {
 
 /**
  * Detect exam code from bubble grid (4 digits).
+ * @param {Bubble[]} bubbles
+ * @param {OpenCVMat} gray
+ * @returns {string}
  */
-export function detectExamCode(bubbles: Bubble[], gray: OpenCVMat): string {
+export function detectExamCode(bubbles, gray) {
   const codeBubbles = bubbles.filter((b) => b.section === 'examCode');
   if (codeBubbles.length === 0) return '';
 
@@ -50,15 +57,16 @@ export function detectExamCode(bubbles: Bubble[], gray: OpenCVMat): string {
 
 /**
  * Detect Phần I answers: multiple choice A/B/C/D for 40 questions.
+ * @param {Bubble[]} bubbles
+ * @param {OpenCVMat} gray
+ * @param {number} [questionCount=40]
+ * @returns {string[]}
  */
-export function detectPhanIAnswers(
-  bubbles: Bubble[],
-  gray: OpenCVMat,
-  questionCount: number = 40
-): string[] {
+export function detectPhanIAnswers(bubbles, gray, questionCount = 40) {
   const sectionBubbles = bubbles.filter((b) => b.section === 'section1');
   const questions = groupByQuestion(sectionBubbles);
-  const answers: string[] = [];
+  /** @type {string[]} */
+  const answers = [];
 
   for (let q = 1; q <= questionCount; q++) {
     const qBubbles = questions[q] || [];
@@ -71,20 +79,22 @@ export function detectPhanIAnswers(
 
 /**
  * Detect Phần II answers: true/false for sub-options a,b,c,d per question.
+ * @param {Bubble[]} bubbles
+ * @param {OpenCVMat} gray
+ * @param {number} [questionCount=8]
+ * @returns {TrueFalseAnswer[]}
  */
-export function detectPhanIIAnswers(
-  bubbles: Bubble[],
-  gray: OpenCVMat,
-  questionCount: number = 8
-): TrueFalseAnswer[] {
+export function detectPhanIIAnswers(bubbles, gray, questionCount = 8) {
   const sectionBubbles = bubbles.filter((b) => b.section === 'section2');
-  const answers: TrueFalseAnswer[] = [];
+  /** @type {TrueFalseAnswer[]} */
+  const answers = [];
 
   for (let q = 1; q <= questionCount; q++) {
     const qBubbles = sectionBubbles.filter((b) => b.question === q);
-    const answer: TrueFalseAnswer = { a: false, b: false, c: false, d: false };
+    /** @type {TrueFalseAnswer} */
+    const answer = { a: false, b: false, c: false, d: false };
 
-    for (const subOpt of ['a', 'b', 'c', 'd'] as const) {
+    for (const subOpt of ['a', 'b', 'c', 'd']) {
       const subBubbles = qBubbles.filter((b) => b.subOption === subOpt);
       // Find which one is filled more (true or false bubble)
       const trueBubble = subBubbles.find((b) => b.value === true);
@@ -107,15 +117,16 @@ export function detectPhanIIAnswers(
 
 /**
  * Detect Phần III answers: numerical digits 0-9.
+ * @param {Bubble[]} bubbles
+ * @param {OpenCVMat} gray
+ * @param {number} [questionCount=6]
+ * @returns {string[]}
  */
-export function detectPhanIIIAnswers(
-  bubbles: Bubble[],
-  gray: OpenCVMat,
-  questionCount: number = 6
-): string[] {
+export function detectPhanIIIAnswers(bubbles, gray, questionCount = 6) {
   const sectionBubbles = bubbles.filter((b) => b.section === 'section3');
   const questions = groupByQuestion(sectionBubbles);
-  const answers: string[] = [];
+  /** @type {string[]} */
+  const answers = [];
 
   for (let q = 1; q <= questionCount; q++) {
     const qBubbles = questions[q] || [];
@@ -128,8 +139,13 @@ export function detectPhanIIIAnswers(
 
 // --- Helpers ---
 
-function groupByColumn(bubbles: Bubble[]): Record<number, Bubble[]> {
-  const groups: Record<number, Bubble[]> = {};
+/**
+ * @param {Bubble[]} bubbles
+ * @returns {Record<number, Bubble[]>}
+ */
+function groupByColumn(bubbles) {
+  /** @type {Record<number, Bubble[]>} */
+  const groups = {};
   for (const b of bubbles) {
     if (b.column !== undefined) {
       (groups[b.column] ??= []).push(b);
@@ -138,8 +154,13 @@ function groupByColumn(bubbles: Bubble[]): Record<number, Bubble[]> {
   return groups;
 }
 
-function groupByQuestion(bubbles: Bubble[]): Record<number, Bubble[]> {
-  const groups: Record<number, Bubble[]> = {};
+/**
+ * @param {Bubble[]} bubbles
+ * @returns {Record<number, Bubble[]>}
+ */
+function groupByQuestion(bubbles) {
+  /** @type {Record<number, Bubble[]>} */
+  const groups = {};
   for (const b of bubbles) {
     if (b.question !== undefined) {
       (groups[b.question] ??= []).push(b);
@@ -150,9 +171,13 @@ function groupByQuestion(bubbles: Bubble[]): Record<number, Bubble[]> {
 
 /**
  * Find the bubble with highest fill confidence above threshold.
+ * @param {Bubble[]} bubbles
+ * @param {OpenCVMat} gray
+ * @returns {Bubble | null}
  */
-function findBestFilled(bubbles: Bubble[], gray: OpenCVMat): Bubble | null {
-  let best: Bubble | null = null;
+function findBestFilled(bubbles, gray) {
+  /** @type {Bubble | null} */
+  let best = null;
   let bestConf = FILL_THRESHOLD;
 
   for (const bubble of bubbles) {

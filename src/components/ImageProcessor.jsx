@@ -1,8 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { ProcessingResult, TestConfig } from '@/types';
-import '@/types/opencv';
 import { preprocessForBubbleDetection } from '@/lib/image-preprocessing';
 import { detectCornerMarkers } from '@/lib/marker-detection';
 import { generateBubbleGrid } from '@/lib/bubble-grid-generator';
@@ -15,15 +13,10 @@ import {
 } from '@/lib/answer-detection';
 import { createDebugVisualization } from '@/lib/debug-visualization';
 
-interface ImageProcessorProps {
-  imageFile: File;
-  onProcessingComplete: (result: ProcessingResult) => void;
-}
-
-export default function ImageProcessor({ imageFile, onProcessingComplete }: ImageProcessorProps) {
+export default function ImageProcessor({ imageFile, onProcessingComplete }) {
   const [processing, setProcessing] = useState(false);
   const [cvLoaded, setCvLoaded] = useState(false);
-  const [debugImageUrl, setDebugImageUrl] = useState<string | null>(null);
+  const [debugImageUrl, setDebugImageUrl] = useState(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.cv) {
@@ -42,7 +35,7 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
     document.head.appendChild(script);
   }, []);
 
-  const getTestConfig = (): TestConfig => {
+  const getTestConfig = () => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('testConfig');
       if (saved) return JSON.parse(saved);
@@ -157,11 +150,7 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }: Imag
 }
 
 /** Pure function: runs the full detection pipeline and returns results + debug image URL */
-function runDetectionPipeline(
-  imageData: ImageData,
-  originalCanvas: HTMLCanvasElement,
-  testConfig: TestConfig
-): { result: ProcessingResult; debugUrl: string } {
+function runDetectionPipeline(imageData, originalCanvas, testConfig) {
   const cv = window.cv;
 
   const src = cv.matFromImageData(imageData);
@@ -175,7 +164,7 @@ function runDetectionPipeline(
   const phanII = detectPhanIIAnswers(bubbles, gray, testConfig.phanII.questionCount);
   const phanIII = detectPhanIIIAnswers(bubbles, gray, testConfig.phanIII.questionCount);
 
-  const result: ProcessingResult = {
+  const result = {
     studentId,
     examCode,
     phanI,

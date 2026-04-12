@@ -1,8 +1,12 @@
 // Vietnamese THPT exam scoring logic
 // Default scoring: Phần I = 0.25pts/question, Phần II = partial credit, Phần III = 0.5pts/question
-import type { StudentResult, TestConfig, ScoreResult, ScoringConfig, TrueFalseAnswer } from '@/types';
+/** @typedef {import('./types.js').StudentResult} StudentResult */
+/** @typedef {import('./types.js').TestConfig} TestConfig */
+/** @typedef {import('./types.js').ScoreResult} ScoreResult */
+/** @typedef {import('./types.js').TrueFalseAnswer} TrueFalseAnswer */
 
-const DEFAULT_SCORING: ScoringConfig = {
+/** @type {import('./types.js').ScoringConfig} */
+const DEFAULT_SCORING = {
   phanI: { pointsPerQuestion: 0.25 },
   phanII: { pointsPerQuestion: 0.25, partialCredit: true },
   phanIII: { pointsPerQuestion: 0.5 },
@@ -10,8 +14,11 @@ const DEFAULT_SCORING: ScoringConfig = {
 
 /**
  * Calculate score for a student result against the answer key.
+ * @param {StudentResult} student
+ * @param {TestConfig} config
+ * @returns {ScoreResult}
  */
-export function calculateScore(student: StudentResult, config: TestConfig): ScoreResult {
+export function calculateScore(student, config) {
   const scoring = config.scoring ?? DEFAULT_SCORING;
 
   const phanI = scorePhanI(student.phanI, config.phanI.answers, scoring.phanI.pointsPerQuestion);
@@ -39,7 +46,13 @@ export function calculateScore(student: StudentResult, config: TestConfig): Scor
   };
 }
 
-function scorePhanI(studentAnswers: string[], correctAnswers: string[], pointsEach: number): number {
+/**
+ * @param {string[]} studentAnswers
+ * @param {string[]} correctAnswers
+ * @param {number} pointsEach
+ * @returns {number}
+ */
+function scorePhanI(studentAnswers, correctAnswers, pointsEach) {
   let score = 0;
   for (let i = 0; i < correctAnswers.length; i++) {
     if (studentAnswers[i] && studentAnswers[i] === correctAnswers[i]) {
@@ -49,19 +62,21 @@ function scorePhanI(studentAnswers: string[], correctAnswers: string[], pointsEa
   return score;
 }
 
-function scorePhanII(
-  studentAnswers: TrueFalseAnswer[],
-  correctAnswers: TrueFalseAnswer[],
-  pointsEach: number,
-  partialCredit: boolean
-): number {
+/**
+ * @param {TrueFalseAnswer[]} studentAnswers
+ * @param {TrueFalseAnswer[]} correctAnswers
+ * @param {number} pointsEach
+ * @param {boolean} partialCredit
+ * @returns {number}
+ */
+function scorePhanII(studentAnswers, correctAnswers, pointsEach, partialCredit) {
   let score = 0;
   for (let i = 0; i < correctAnswers.length; i++) {
     const student = studentAnswers[i];
     const correct = correctAnswers[i];
     if (!student || !correct) continue;
 
-    const subs: Array<'a' | 'b' | 'c' | 'd'> = ['a', 'b', 'c', 'd'];
+    const subs = ['a', 'b', 'c', 'd'];
     let correctCount = 0;
 
     for (const sub of subs) {
@@ -83,7 +98,13 @@ function scorePhanII(
   return score;
 }
 
-function scorePhanIII(studentAnswers: string[], correctAnswers: string[], pointsEach: number): number {
+/**
+ * @param {string[]} studentAnswers
+ * @param {string[]} correctAnswers
+ * @param {number} pointsEach
+ * @returns {number}
+ */
+function scorePhanIII(studentAnswers, correctAnswers, pointsEach) {
   let score = 0;
   for (let i = 0; i < correctAnswers.length; i++) {
     if (studentAnswers[i] && studentAnswers[i] === correctAnswers[i]) {

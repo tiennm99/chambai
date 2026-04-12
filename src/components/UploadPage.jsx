@@ -2,26 +2,25 @@
 
 import { useState, useRef, useCallback } from 'react';
 import ImageProcessor from './ImageProcessor';
-import type { StudentResult, ProcessingResult } from '@/types';
 
 export default function UploadPage() {
-  const [selectedImages, setSelectedImages] = useState<File[]>([]);
-  const [processedResults, setProcessedResults] = useState<StudentResult[]>([]);
+  const [selectedImages, setSelectedImages] = useState([]);
+  const [processedResults, setProcessedResults] = useState([]);
   const [processing, setProcessing] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(-1);
   const [dragActive, setDragActive] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [statusMessage, setStatusMessage] = useState(null);
+  const fileInputRef = useRef(null);
   // Use a ref-based resolver to avoid window globals
-  const resolveRef = useRef<(() => void) | null>(null);
+  const resolveRef = useRef(null);
 
-  const handleDrag = (e: React.DragEvent) => {
+  const handleDrag = (e) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(e.type === 'dragenter' || e.type === 'dragover');
   };
 
-  const addImageFiles = (files: FileList | File[]) => {
+  const addImageFiles = (files) => {
     const imageFiles = Array.from(files).filter(
       (file) => file.type === 'image/jpeg' || file.type === 'image/png'
     );
@@ -31,23 +30,23 @@ export default function UploadPage() {
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
     addImageFiles(e.dataTransfer.files);
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e) => {
     if (e.target.files) addImageFiles(e.target.files);
   };
 
-  const removeImage = (index: number) => {
+  const removeImage = (index) => {
     setSelectedImages((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleProcessingComplete = useCallback((result: ProcessingResult) => {
-    const newResult: StudentResult = {
+  const handleProcessingComplete = useCallback((result) => {
+    const newResult = {
       id: `student_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       fileName: selectedImages[currentIndex]?.name || 'unknown',
       studentId: result.studentId,
@@ -87,7 +86,7 @@ export default function UploadPage() {
     try {
       for (let i = 0; i < selectedImages.length; i++) {
         setCurrentIndex(i);
-        await new Promise<void>((resolve) => {
+        await new Promise((resolve) => {
           resolveRef.current = resolve;
         });
       }
@@ -265,8 +264,8 @@ export default function UploadPage() {
 }
 
 /** Thumbnail preview for selected image files */
-function ImageThumbnail({ file, index, onRemove }: { file: File; index: number; onRemove: (i: number) => void }) {
-  const [src, setSrc] = useState<string>('');
+function ImageThumbnail({ file, index, onRemove }) {
+  const [src, setSrc] = useState('');
 
   // Create object URL for thumbnail
   useState(() => {

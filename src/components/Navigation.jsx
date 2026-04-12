@@ -1,14 +1,9 @@
-interface NavigationProps {
-  currentPage: 'config' | 'upload' | 'results';
-  onPageChange: (page: 'config' | 'upload' | 'results') => void;
-}
-
-export default function Navigation({ currentPage, onPageChange }: NavigationProps) {
+export default function Navigation({ currentPage, onPageChange }) {
   const buttons = [
     { key: 'config', label: '1. Cấu hình đề thi', description: 'Thiết lập câu hỏi và đáp án' },
     { key: 'upload', label: '2. Tải và xử lý ảnh', description: 'Nhận diện bài thi' },
     { key: 'results', label: '3. Kết quả', description: 'Xem điểm và xuất CSV' },
-  ] as const;
+  ];
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
