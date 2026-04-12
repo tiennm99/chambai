@@ -1,39 +1,34 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-
-interface TestConfig {
-  phanI: {
-    questionCount: number;
-    answers: string[];
-  };
-  phanII: {
-    questionCount: number;
-    answers: Array<{ a: boolean; b: boolean; c: boolean; d: boolean }>;
-  };
-  phanIII: {
-    questionCount: number;
-    answers: string[];
-  };
-}
+import type { TestConfig } from '@/types';
 
 export default function ConfigurationPage() {
   const [config, setConfig] = useState<TestConfig>({
     phanI: { questionCount: 40, answers: [] },
     phanII: { questionCount: 8, answers: [] },
     phanIII: { questionCount: 6, answers: [] },
+    scoring: {
+      phanI: { pointsPerQuestion: 0.25 },
+      phanII: { pointsPerQuestion: 0.25, partialCredit: true },
+      phanIII: { pointsPerQuestion: 0.5 },
+    },
   });
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
-    const savedConfig = localStorage.getItem('testConfig');
-    if (savedConfig) {
-      setConfig(JSON.parse(savedConfig));
-    }
+    const saved = localStorage.getItem('testConfig');
+    if (saved) setConfig(JSON.parse(saved));
   }, []);
+
+  const showStatus = (type: 'success' | 'error', text: string) => {
+    setStatusMessage({ type, text });
+    setTimeout(() => setStatusMessage(null), 3000);
+  };
 
   const saveConfig = () => {
     localStorage.setItem('testConfig', JSON.stringify(config));
-    alert('Cấu hình đã được lưu thành công!');
+    showStatus('success', 'Cấu hình đã được lưu thành công!');
   };
 
   const resetAllData = () => {
@@ -43,18 +38,20 @@ export default function ConfigurationPage() {
         phanI: { questionCount: 40, answers: [] },
         phanII: { questionCount: 8, answers: [] },
         phanIII: { questionCount: 6, answers: [] },
+        scoring: {
+          phanI: { pointsPerQuestion: 0.25 },
+          phanII: { pointsPerQuestion: 0.25, partialCredit: true },
+          phanIII: { pointsPerQuestion: 0.5 },
+        },
       });
-      alert('Đã xóa tất cả dữ liệu!');
+      showStatus('success', 'Đã xóa tất cả dữ liệu!');
     }
   };
 
   const updatePhanIAnswer = (index: number, answer: string) => {
     const newAnswers = [...config.phanI.answers];
     newAnswers[index] = answer;
-    setConfig({
-      ...config,
-      phanI: { ...config.phanI, answers: newAnswers },
-    });
+    setConfig({ ...config, phanI: { ...config.phanI, answers: newAnswers } });
   };
 
   const updatePhanIIAnswer = (questionIndex: number, option: 'a' | 'b' | 'c' | 'd', value: boolean) => {
@@ -63,33 +60,36 @@ export default function ConfigurationPage() {
       newAnswers[questionIndex] = { a: false, b: false, c: false, d: false };
     }
     newAnswers[questionIndex][option] = value;
-    setConfig({
-      ...config,
-      phanII: { ...config.phanII, answers: newAnswers },
-    });
+    setConfig({ ...config, phanII: { ...config.phanII, answers: newAnswers } });
   };
 
   const updatePhanIIIAnswer = (index: number, answer: string) => {
     const newAnswers = [...config.phanIII.answers];
     newAnswers[index] = answer;
-    setConfig({
-      ...config,
-      phanIII: { ...config.phanIII, answers: newAnswers },
-    });
+    setConfig({ ...config, phanIII: { ...config.phanIII, answers: newAnswers } });
   };
 
   const updateQuestionCount = (section: 'phanI' | 'phanII' | 'phanIII', count: number) => {
-    setConfig({
-      ...config,
-      [section]: { ...config[section], questionCount: count },
-    });
+    setConfig({ ...config, [section]: { ...config[section], questionCount: count } });
   };
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-900 mb-4">Cấu hình đề thi</h2>
-        <div className="flex gap-4">
+
+        {/* Status Message */}
+        {statusMessage && (
+          <div className={`mb-4 p-3 rounded-lg text-sm font-medium transition-opacity ${
+            statusMessage.type === 'success'
+              ? 'bg-green-50 text-green-800 border border-green-200'
+              : 'bg-red-50 text-red-800 border border-red-200'
+          }`}>
+            {statusMessage.text}
+          </div>
+        )}
+
+        <div className="flex gap-3">
           <button
             onClick={saveConfig}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
@@ -106,13 +106,60 @@ export default function ConfigurationPage() {
       </div>
 
       <div className="space-y-8">
+        {/* Scoring Config */}
+        <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+          <h3 className="text-lg font-semibold mb-3">Cấu hình điểm số</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phần I (điểm/câu)</label>
+              <input
+                type="number"
+                step="0.25"
+                min="0"
+                value={config.scoring?.phanI.pointsPerQuestion ?? 0.25}
+                onChange={(e) => setConfig({
+                  ...config,
+                  scoring: { ...config.scoring!, phanI: { pointsPerQuestion: parseFloat(e.target.value) || 0 } },
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phần II (điểm/ý)</label>
+              <input
+                type="number"
+                step="0.25"
+                min="0"
+                value={config.scoring?.phanII.pointsPerQuestion ?? 0.25}
+                onChange={(e) => setConfig({
+                  ...config,
+                  scoring: { ...config.scoring!, phanII: { ...config.scoring!.phanII, pointsPerQuestion: parseFloat(e.target.value) || 0 } },
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phần III (điểm/câu)</label>
+              <input
+                type="number"
+                step="0.25"
+                min="0"
+                value={config.scoring?.phanIII.pointsPerQuestion ?? 0.5}
+                onChange={(e) => setConfig({
+                  ...config,
+                  scoring: { ...config.scoring!, phanIII: { pointsPerQuestion: parseFloat(e.target.value) || 0 } },
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+          </div>
+        </div>
+
         {/* Phần I - Trắc nghiệm */}
         <div className="border border-gray-200 rounded-lg p-6">
           <h3 className="text-xl font-semibold mb-4">Phần I - Trắc nghiệm (A, B, C, D)</h3>
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Số câu hỏi:
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Số câu hỏi:</label>
             <input
               type="number"
               value={config.phanI.questionCount}
@@ -150,9 +197,7 @@ export default function ConfigurationPage() {
         <div className="border border-gray-200 rounded-lg p-6">
           <h3 className="text-xl font-semibold mb-4">Phần II - Đúng/Sai</h3>
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Số câu hỏi:
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Số câu hỏi:</label>
             <input
               type="number"
               value={config.phanII.questionCount}
@@ -167,14 +212,14 @@ export default function ConfigurationPage() {
               <div key={i} className="border border-gray-200 rounded-lg p-4">
                 <h4 className="font-medium mb-3">Câu {i + 1}:</h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {['a', 'b', 'c', 'd'].map((option) => (
+                  {(['a', 'b', 'c', 'd'] as const).map((option) => (
                     <div key={option} className="flex items-center gap-2">
                       <span className="text-sm font-medium w-4">{option.toUpperCase()}:</span>
                       <div className="flex gap-1">
                         <button
-                          onClick={() => updatePhanIIAnswer(i, option as 'a' | 'b' | 'c' | 'd', true)}
+                          onClick={() => updatePhanIIAnswer(i, option, true)}
                           className={`px-3 py-1 rounded text-sm transition-colors ${
-                            config.phanII.answers[i]?.[option as 'a' | 'b' | 'c' | 'd'] === true
+                            config.phanII.answers[i]?.[option] === true
                               ? 'bg-green-600 text-white'
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                           }`}
@@ -182,9 +227,9 @@ export default function ConfigurationPage() {
                           Đúng
                         </button>
                         <button
-                          onClick={() => updatePhanIIAnswer(i, option as 'a' | 'b' | 'c' | 'd', false)}
+                          onClick={() => updatePhanIIAnswer(i, option, false)}
                           className={`px-3 py-1 rounded text-sm transition-colors ${
-                            config.phanII.answers[i]?.[option as 'a' | 'b' | 'c' | 'd'] === false
+                            config.phanII.answers[i]?.[option] === false
                               ? 'bg-red-600 text-white'
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                           }`}
@@ -204,9 +249,7 @@ export default function ConfigurationPage() {
         <div className="border border-gray-200 rounded-lg p-6">
           <h3 className="text-xl font-semibold mb-4">Phần III - Tự luận số</h3>
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Số câu hỏi:
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Số câu hỏi:</label>
             <input
               type="number"
               value={config.phanIII.questionCount}

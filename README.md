@@ -65,15 +65,25 @@ A Next.js web application for automatically scoring Vietnamese multiple choice t
 ```
 src/
 ├── app/
-│   ├── layout.tsx          # Root layout with OpenCV.js integration
-│   ├── page.tsx            # Main application page
-│   └── globals.css         # Global styles
+│   ├── layout.tsx              # Root layout with OpenCV.js integration
+│   ├── page.tsx                # Main application page
+│   └── globals.css             # Global styles
 ├── components/
-│   ├── Navigation.tsx      # Navigation between pages
-│   ├── ConfigurationPage.tsx # Test configuration interface
-│   ├── UploadPage.tsx      # Image upload and processing
-│   ├── ResultsPage.tsx     # Results display and export
-│   └── ImageProcessor.tsx  # OpenCV.js image processing
+│   ├── Navigation.tsx          # Navigation between pages
+│   ├── ConfigurationPage.tsx   # Test configuration + scoring config
+│   ├── UploadPage.tsx          # Image upload with thumbnails and progress
+│   ├── ResultsPage.tsx         # Results table with sorting/filtering/export
+│   └── ImageProcessor.tsx      # Orchestrator for the detection pipeline
+├── lib/
+│   ├── image-preprocessing.ts  # Grayscale, thresholding, bubble fill measurement
+│   ├── marker-detection.ts     # Corner marker detection for alignment
+│   ├── bubble-grid-generator.ts # Vietnamese THPT answer sheet layout
+│   ├── answer-detection.ts     # Student ID, exam code, answer detection
+│   ├── debug-visualization.ts  # Debug overlay drawing
+│   └── scoring.ts              # Weighted scoring (Phần I/II/III)
+└── types/
+    ├── index.ts                # Shared types (TestConfig, StudentResult, etc.)
+    └── opencv.ts               # OpenCV.js type declarations
 ```
 
 ## Data Structure
@@ -118,15 +128,18 @@ interface StudentResult {
 ## Image Processing
 
 The application uses OpenCV.js for:
-- Converting images to grayscale
-- Applying adaptive thresholding
-- Contour detection for bubble recognition
-- Region of Interest (ROI) extraction
+- Converting images to grayscale and adaptive thresholding
+- Corner marker detection for sheet alignment
+- Contour-based bubble detection (not HoughCircles)
+- Region of Interest (ROI) extraction and fill measurement
+- Debug visualization with color-coded overlay
 
-Currently implemented as a mock system that generates random realistic data for demonstration purposes. Full OpenCV implementation would require:
-- Template matching for accurate bubble detection
-- Advanced preprocessing for image alignment
-- Robust pattern recognition algorithms
+The detection pipeline follows the Vietnamese THPT answer sheet layout (Công văn 1239/BGDĐT 2025):
+1. Preprocess image (grayscale + Gaussian blur + adaptive threshold)
+2. Detect 4 corner markers for alignment reference
+3. Generate bubble grid using proportional layout ratios
+4. Measure bubble fill intensity for answer detection
+5. Create debug overlay showing all detected positions
 
 ## Development Notes
 
