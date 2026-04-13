@@ -98,6 +98,90 @@ export function detectCornerMarkers(thresh, imageWidth, imageHeight) {
 }
 
 /**
+ * Apply perspective correction to straighten a skewed answer sheet image.
+ * Uses 4 detected corner markers to compute and apply a perspective transform.
+ * Skips correction if fewer than 4 corners found or skew angle is < 2 degrees.
+ * @param {OpenCVMat} src - Grayscale source image
+ * @param {MarkerDetectionResult} markers
+ * @param {number} imageWidth
+ * @param {number} imageHeight
+ * @returns {{ corrected: OpenCVMat, markers: MarkerDetectionResult, applied: boolean }}
+ */
+export function applyPerspectiveCorrection(src, markers, imageWidth, imageHeight) {
+  const cv = window.cv;
+
+  // Require exactly 4 corners for a valid perspective transform
+  if (!markers.corners || markers.corners.length !== 4) {
+    return { corrected: src, markers, applied: false };
+  }
+
+  const [tl, tr, br, bl] = markers.corners;
+
+  // Calculate skew angle from the top edge; skip if nearly straight
+  const topAngle = Math.atan2(tr.y - tl.y, tr.x - tl.x) * (180 / Math.PI);
+  if (Math.abs(topAngle) < 2) {
+    return { corrected: src, markers, applied: false };
+  }
+
+  // Compute destination rectangle dimensions from marker distances
+  const dstWidth = Math.round(
+    Math.max(
+      Math.hypot(tr.x - tl.x, tr.y - tl.y),
+      Math.hypot(br.x - bl.x, br.y - bl.y)
+    )
+  );
+  const dstHeight = Math.round(
+    Math.max(
+      Math.hypot(bl.x - tl.x, bl.y - tl.y),
+      Math.hypot(br.x - tr.x, br.y - tr.y)
+    )
+  );
+
+  // Feature-detect required OpenCV functions
+  if (!cv.getPerspectiveTransform || !cv.warpPerspective) {
+    console.warn('applyPerspectiveCorrection: OpenCV perspective functions unavailable, skipping');
+    return { corrected: src, markers, applied: false };
+  }
+
+  const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    tl.x, tl.y,
+    tr.x, tr.y,
+    br.x, br.y,
+    bl.x, bl.y,
+  ]);
+  const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    0, 0,
+    dstWidth, 0,
+    dstWidth, dstHeight,
+    0, dstHeight,
+  ]);
+
+  const M = cv.getPerspectiveTransform(srcPts, dstPts);
+  const corrected = new cv.Mat();
+  cv.warpPerspective(src, corrected, M, new cv.Size(dstWidth, dstHeight));
+
+  srcPts.delete();
+  dstPts.delete();
+  M.delete();
+
+  // Updated markers: corners unchanged (in original space), bounding box covers entire corrected image
+  const updatedMarkers = {
+    corners: markers.corners,
+    edges: markers.edges,
+    boundingBox: {
+      left: 0,
+      top: 0,
+      right: dstWidth,
+      bottom: dstHeight,
+      width: dstWidth,
+      height: dstHeight,
+    },
+  };
+
+  return { corrected, markers: updatedMarkers, applied: true };
+}
+
+/**
  * From candidates, pick the 4 that are closest to each image corner.
  * @param {Array<{ center: Point, area: number }>} candidates
  * @param {number} imageWidth

@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import ImageProcessor from './ImageProcessor';
+import { saveDebugImage } from '@/lib/indexed-db-store';
 
-export default function UploadPage() {
+export default function UploadPage({ config, onResultsAdd }) {
   const [selectedImages, setSelectedImages] = useState([]);
   const [processedResults, setProcessedResults] = useState([]);
   const [processing, setProcessing] = useState(false);
@@ -11,8 +12,9 @@ export default function UploadPage() {
   const [dragActive, setDragActive] = useState(false);
   const [statusMessage, setStatusMessage] = useState(null);
   const fileInputRef = useRef(null);
-  // Use a ref-based resolver to avoid window globals
   const resolveRef = useRef(null);
+  // Accumulate results in a ref to avoid race conditions with React state batching
+  const resultsRef = useRef([]);
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -58,9 +60,9 @@ export default function UploadPage() {
       debugImageUrl: result.debugImageUrl,
     };
 
+    resultsRef.current.push(newResult);
     setProcessedResults((prev) => [...prev, newResult]);
 
-    // Resolve the current processing promise
     if (resolveRef.current) {
       resolveRef.current();
       resolveRef.current = null;
@@ -72,37 +74,32 @@ export default function UploadPage() {
       setStatusMessage({ type: 'error', text: 'Vui lòng chọn ít nhất một hình ảnh để xử lý.' });
       return;
     }
-
-    const testConfig = localStorage.getItem('testConfig');
-    if (!testConfig) {
+    if (!config || config.phanI.answers.length === 0) {
       setStatusMessage({ type: 'error', text: 'Vui lòng cấu hình đề thi trước khi xử lý ảnh.' });
       return;
     }
 
     setProcessing(true);
     setProcessedResults([]);
+    resultsRef.current = [];
     setStatusMessage({ type: 'info', text: 'Đang xử lý...' });
 
     try {
       for (let i = 0; i < selectedImages.length; i++) {
         setCurrentIndex(i);
-        await new Promise((resolve) => {
-          resolveRef.current = resolve;
-        });
+        await new Promise((resolve) => { resolveRef.current = resolve; });
       }
 
-      // Save results to localStorage
-      const savedResults = localStorage.getItem('studentResults');
-      const existing = savedResults ? JSON.parse(savedResults) : [];
-      // processedResults will have been updated by handleProcessingComplete callbacks
-      // Use a small timeout to ensure state has settled
-      setTimeout(() => {
-        const finalResults = [...existing];
-        setProcessedResults((current) => {
-          localStorage.setItem('studentResults', JSON.stringify([...finalResults, ...current]));
-          return current;
-        });
-      }, 100);
+      // Save debug images to IndexedDB (non-blocking)
+      for (const r of resultsRef.current) {
+        if (r.debugImageUrl) {
+          saveDebugImage(r.id, r.debugImageUrl).catch(() => {});
+        }
+      }
+
+      // Notify parent to persist results (parent handles localStorage)
+      onResultsAdd(resultsRef.current);
+      resultsRef.current = [];
 
       setStatusMessage({ type: 'success', text: `Xử lý hoàn tất ${selectedImages.length} ảnh!` });
     } catch (error) {
@@ -127,7 +124,6 @@ export default function UploadPage() {
         </p>
       </div>
 
-      {/* Status Message */}
       {statusMessage && (
         <div className={`mb-4 p-3 rounded-lg text-sm font-medium ${
           statusMessage.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' :
@@ -139,39 +135,15 @@ export default function UploadPage() {
       )}
 
       {/* Upload Area */}
-      <div className="mb-6">
-        <div
-          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-            dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
-          }`}
-          onDragEnter={handleDrag}
-          onDragLeave={handleDrag}
-          onDragOver={handleDrag}
-          onDrop={handleDrop}
-        >
-          <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-            <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <p className="text-lg text-gray-700 mt-4 mb-2">Kéo thả ảnh vào đây hoặc</p>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Chọn file
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept="image/jpeg,image/png"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
-          <p className="text-sm text-gray-500 mt-2">Chỉ hỗ trợ file JPG và PNG</p>
-        </div>
-      </div>
+      <DropZone
+        dragActive={dragActive}
+        onDrag={handleDrag}
+        onDrop={handleDrop}
+        onFileSelect={handleFileSelect}
+        fileInputRef={fileInputRef}
+      />
 
-      {/* Selected Images with Thumbnails */}
+      {/* Selected Images */}
       {selectedImages.length > 0 && (
         <div className="mb-6">
           <h3 className="text-lg font-semibold mb-3">Ảnh đã chọn ({selectedImages.length})</h3>
@@ -198,7 +170,7 @@ export default function UploadPage() {
         </button>
       </div>
 
-      {/* Processing Progress */}
+      {/* Progress */}
       {processing && (
         <div className="mb-6">
           <div className="flex justify-between text-sm text-gray-600 mb-1">
@@ -206,10 +178,7 @@ export default function UploadPage() {
             <span>{progressPercent}%</span>
           </div>
           <div className="bg-gray-200 rounded-full h-2.5">
-            <div
-              className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-              style={{ width: `${progressPercent}%` }}
-            />
+            <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${progressPercent}%` }} />
           </div>
           {currentIndex >= 0 && currentIndex < selectedImages.length && (
             <p className="text-xs text-gray-500 mt-1">{selectedImages[currentIndex].name}</p>
@@ -219,10 +188,7 @@ export default function UploadPage() {
 
       {/* Image Processor (hidden worker) */}
       {currentIndex >= 0 && currentIndex < selectedImages.length && (
-        <ImageProcessor
-          imageFile={selectedImages[currentIndex]}
-          onProcessingComplete={handleProcessingComplete}
-        />
+        <ImageProcessor imageFile={selectedImages[currentIndex]} onProcessingComplete={handleProcessingComplete} />
       )}
 
       {/* Results Preview */}
@@ -232,27 +198,14 @@ export default function UploadPage() {
           <div className="space-y-4">
             {processedResults.map((result, index) => (
               <div key={index} className="border border-gray-200 rounded-lg p-4">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <h4 className="font-medium text-gray-900">{result.fileName}</h4>
-                    <p className="text-sm text-gray-600">SBD: {result.studentId}</p>
-                    {result.examCode && (
-                      <p className="text-sm text-gray-600">Mã đề: {result.examCode}</p>
-                    )}
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1">
-                      Đã xử lý
-                    </span>
-                  </div>
-                </div>
+                <h4 className="font-medium text-gray-900">{result.fileName}</h4>
+                <p className="text-sm text-gray-600">SBD: {result.studentId}</p>
+                {result.examCode && <p className="text-sm text-gray-600">Mã đề: {result.examCode}</p>}
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1">
+                  Đã xử lý
+                </span>
                 {result.debugImageUrl && (
-                  <div className="mt-3">
-                    <img
-                      src={result.debugImageUrl}
-                      alt={`Debug visualization for ${result.fileName}`}
-                      className="max-w-full h-auto border border-gray-300 rounded"
-                      style={{ maxHeight: '400px' }}
-                    />
-                  </div>
+                  <img src={result.debugImageUrl} alt="Debug" className="mt-3 max-w-full h-auto border border-gray-300 rounded" style={{ maxHeight: '400px' }} />
                 )}
               </div>
             ))}
@@ -263,22 +216,41 @@ export default function UploadPage() {
   );
 }
 
-/** Thumbnail preview for selected image files */
+function DropZone({ dragActive, onDrag, onDrop, onFileSelect, fileInputRef }) {
+  return (
+    <div className="mb-6">
+      <div
+        className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+          dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
+        }`}
+        onDragEnter={onDrag} onDragLeave={onDrag} onDragOver={onDrag} onDrop={onDrop}
+      >
+        <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+          <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <p className="text-lg text-gray-700 mt-4 mb-2">Kéo thả ảnh vào đây hoặc</p>
+        <button onClick={() => fileInputRef.current?.click()} className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+          Chọn file
+        </button>
+        <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png" onChange={onFileSelect} className="hidden" />
+        <p className="text-sm text-gray-500 mt-2">Chỉ hỗ trợ file JPG và PNG</p>
+      </div>
+    </div>
+  );
+}
+
 function ImageThumbnail({ file, index, onRemove }) {
   const [src, setSrc] = useState('');
 
-  // Create object URL for thumbnail
-  useState(() => {
+  useEffect(() => {
     const url = URL.createObjectURL(file);
     setSrc(url);
     return () => URL.revokeObjectURL(url);
-  });
+  }, [file]);
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden group relative">
-      {src && (
-        <img src={src} alt={file.name} className="w-full h-32 object-cover" />
-      )}
+      {src && <img src={src} alt={file.name} className="w-full h-32 object-cover" />}
       <div className="p-2">
         <p className="text-xs font-medium text-gray-700 truncate">{file.name}</p>
         <p className="text-xs text-gray-400">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
@@ -286,9 +258,7 @@ function ImageThumbnail({ file, index, onRemove }) {
       <button
         onClick={() => onRemove(index)}
         className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-      >
-        X
-      </button>
+      >X</button>
     </div>
   );
 }

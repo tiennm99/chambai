@@ -207,11 +207,11 @@ function drawPhanIIIAnswers(ctx, bubbles, result, config, gray) {
 /** @param {CanvasRenderingContext2D} ctx */
 function drawLegend(ctx) {
   const entries = [
-    { color: COLORS.allPositions, label: 'All Positions' },
-    { color: COLORS.studentId, label: 'Student ID' },
-    { color: COLORS.examCode, label: 'Exam Code' },
-    { color: COLORS.correct, label: 'Correct' },
-    { color: COLORS.wrong, label: 'Wrong' },
+    { color: COLORS.allPositions, label: 'Tất cả vị trí' },
+    { color: COLORS.studentId, label: 'Số báo danh' },
+    { color: COLORS.examCode, label: 'Mã đề thi' },
+    { color: COLORS.correct, label: 'Đúng' },
+    { color: COLORS.wrong, label: 'Sai' },
   ];
 
   const x = 10;
@@ -227,7 +227,7 @@ function drawLegend(ctx) {
 
   ctx.fillStyle = '#000';
   ctx.font = 'bold 12px Arial';
-  ctx.fillText('Debug Legend', x + 8, y + 16);
+  ctx.fillText('Chú thích', x + 8, y + 16);
 
   entries.forEach((entry, i) => {
     ctx.fillStyle = entry.color;

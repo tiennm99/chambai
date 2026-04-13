@@ -17,19 +17,20 @@
  * @typedef {(rx: number, ry: number) => { x: number, y: number }} AbsFn
  */
 
-// Vietnamese THPT answer sheet proportional layout (2025 format)
+// Vietnamese THPT answer sheet proportional layout (2025 format, CV1239/BGDĐT)
 // These ratios are relative to the answer area bounded by corner markers
 const SHEET_LAYOUT = {
   // Student ID: top-right area, 8 columns x 10 rows (digits 0-9)
-  studentId: { x: 0.65, y: 0.02, w: 0.25, h: 0.18, cols: 8, rows: 10 },
-  // Exam code: next to student ID, 4 columns x 10 rows
-  examCode: { x: 0.45, y: 0.02, w: 0.15, h: 0.18, cols: 4, rows: 10 },
+  studentId: { x: 0.58, y: 0.05, w: 0.24, h: 0.20, cols: 8, rows: 10 },
+  // Exam code: right of student ID, 4 columns x 10 rows
+  examCode: { x: 0.82, y: 0.05, w: 0.13, h: 0.20, cols: 4, rows: 10 },
   // Phần I: multiple choice (A,B,C,D), 4 question columns x 10 rows = 40 questions
-  phanI: { x: 0.03, y: 0.25, w: 0.94, h: 0.30, questionCols: 4, questionsPerCol: 10 },
+  phanI: { x: 0.03, y: 0.28, w: 0.94, h: 0.27, questionCols: 4, questionsPerCol: 10 },
   // Phần II: true/false, 4 question columns x 2 rows (8 questions, each with a,b,c,d sub-options)
-  phanII: { x: 0.03, y: 0.58, w: 0.94, h: 0.15, questions: 8, subOptions: 4 },
-  // Phần III: numerical answers, 6 questions x 10 digits (0-9)
-  phanIII: { x: 0.03, y: 0.76, w: 0.94, h: 0.22, questions: 6, digits: 10 },
+  phanII: { x: 0.03, y: 0.55, w: 0.94, h: 0.17, questions: 8, subOptions: 4 },
+  // Phần III: multi-char numerical answers, 6 questions x 5 char positions x 12 rows
+  // Row layout per char column: index 0='-', index 1=',', indices 2-11='0'-'9'
+  phanIII: { x: 0.03, y: 0.72, w: 0.94, h: 0.26, questions: 6, charsPerQuestion: 5, charRows: 12 },
 };
 
 /**
@@ -245,7 +246,14 @@ function generatePhanIIBubbles(bubbles, area, abs, box) {
   }
 }
 
+// Row index → character value mapping for Phần III multi-char columns
+// Index 0='-' (sign), index 1=',' (decimal comma), indices 2-11='0'-'9'
+const PHAN_III_CHAR_VALUES = ['-', ',', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
 /**
+ * Generate Phần III bubbles using the multi-character answer model.
+ * Each question has `charsPerQuestion` character position columns.
+ * Each character column has `charRows` rows: '-', ',', '0'-'9'.
  * @param {Bubble[]} bubbles
  * @param {typeof SHEET_LAYOUT.phanIII} area
  * @param {AbsFn} abs
@@ -253,27 +261,35 @@ function generatePhanIIBubbles(bubbles, area, abs, box) {
  */
 function generatePhanIIIBubbles(bubbles, area, abs, box) {
   const size = bubbleSize(box);
-  const { questions, digits } = area;
-  const colWidth = area.w / questions;
-  const rowSpacing = area.h / (digits + 1);
+  const { questions, charsPerQuestion, charRows } = area;
+  // Each question occupies an equal slice of the total width
+  const questionWidth = area.w / questions;
+  // Each character position column within a question
+  const charColWidth = questionWidth / charsPerQuestion;
+  const rowSpacing = area.h / (charRows + 1);
 
   for (let q = 0; q < questions; q++) {
-    for (let digit = 0; digit < digits; digit++) {
-      const pos = abs(
-        area.x + q * colWidth + colWidth * 0.5,
-        area.y + (digit + 1) * rowSpacing
-      );
-      bubbles.push({
-        x: pos.x,
-        y: pos.y,
-        width: size,
-        height: size,
-        area: size * size,
-        circularity: 0.9,
-        section: 'section3',
-        question: q + 1,
-        digit: digit,
-      });
+    for (let charPos = 0; charPos < charsPerQuestion; charPos++) {
+      for (let rowIdx = 0; rowIdx < charRows; rowIdx++) {
+        const charValue = PHAN_III_CHAR_VALUES[rowIdx];
+        const pos = abs(
+          area.x + q * questionWidth + charPos * charColWidth + charColWidth * 0.5,
+          area.y + (rowIdx + 1) * rowSpacing
+        );
+        bubbles.push({
+          x: pos.x,
+          y: pos.y,
+          width: size,
+          height: size,
+          area: size * size,
+          circularity: 0.9,
+          section: 'section3',
+          question: q + 1,
+          charPosition: charPos,
+          charValue,
+          row: rowIdx, // kept for debug visualization backward compat
+        });
+      }
     }
   }
 }

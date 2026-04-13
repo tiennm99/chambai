@@ -39,7 +39,9 @@
  * @property {string} [option] - 'A' | 'B' | 'C' | 'D' (for section1)
  * @property {string} [subOption] - 'a' | 'b' | 'c' | 'd' (for section2)
  * @property {boolean} [value] - true/false bubble (for section2)
- * @property {number} [digit] - Digit value 0–9 (for section3)
+ * @property {number} [digit] - Digit value 0–9 (for section3, legacy single-digit model)
+ * @property {number} [charPosition] - Character position index 0–4 (for section3 multi-char)
+ * @property {string} [charValue] - Character value: '-', ',', '0'–'9' (for section3 multi-char)
  */
 
 /**

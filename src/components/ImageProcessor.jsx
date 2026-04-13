@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { preprocessForBubbleDetection } from '@/lib/image-preprocessing';
-import { detectCornerMarkers } from '@/lib/marker-detection';
+import { detectCornerMarkers, applyPerspectiveCorrection } from '@/lib/marker-detection';
 import { generateBubbleGrid } from '@/lib/bubble-grid-generator';
 import {
   detectStudentId,
@@ -156,13 +156,22 @@ function runDetectionPipeline(imageData, originalCanvas, testConfig) {
   const src = cv.matFromImageData(imageData);
   const { gray, thresh } = preprocessForBubbleDetection(src);
   const markers = detectCornerMarkers(thresh, imageData.width, imageData.height);
-  const bubbles = generateBubbleGrid(markers, imageData.width, imageData.height);
 
-  const studentId = detectStudentId(bubbles, gray);
-  const examCode = detectExamCode(bubbles, gray);
-  const phanI = detectPhanIAnswers(bubbles, gray, testConfig.phanI.questionCount);
-  const phanII = detectPhanIIAnswers(bubbles, gray, testConfig.phanII.questionCount);
-  const phanIII = detectPhanIIIAnswers(bubbles, gray, testConfig.phanIII.questionCount);
+  // Apply perspective correction for skewed photos (skips if angle < 2 degrees)
+  const { corrected, markers: activeMarkers, applied: perspectiveApplied } =
+    applyPerspectiveCorrection(gray, markers, imageData.width, imageData.height);
+
+  const activeGray = perspectiveApplied ? corrected : gray;
+  const activeWidth = perspectiveApplied ? corrected.cols : imageData.width;
+  const activeHeight = perspectiveApplied ? corrected.rows : imageData.height;
+
+  const bubbles = generateBubbleGrid(activeMarkers, activeWidth, activeHeight);
+
+  const studentId = detectStudentId(bubbles, activeGray);
+  const examCode = detectExamCode(bubbles, activeGray);
+  const phanI = detectPhanIAnswers(bubbles, activeGray, testConfig.phanI.questionCount);
+  const phanII = detectPhanIIAnswers(bubbles, activeGray, testConfig.phanII.questionCount);
+  const phanIII = detectPhanIIIAnswers(bubbles, activeGray, testConfig.phanIII.questionCount);
 
   const result = {
     studentId,
@@ -173,11 +182,12 @@ function runDetectionPipeline(imageData, originalCanvas, testConfig) {
     confidence: 0.85,
   };
 
-  const debugUrl = createDebugVisualization(originalCanvas, bubbles, result, testConfig, gray);
+  const debugUrl = createDebugVisualization(originalCanvas, bubbles, result, testConfig, activeGray);
 
   src.delete();
   gray.delete();
   thresh.delete();
+  if (perspectiveApplied) corrected.delete();
 
   return { result: { ...result, debugImageUrl: debugUrl }, debugUrl };
 }

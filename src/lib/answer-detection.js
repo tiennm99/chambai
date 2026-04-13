@@ -115,8 +115,13 @@ export function detectPhanIIAnswers(bubbles, gray, questionCount = 8) {
   return answers;
 }
 
+// Number of character positions per Phần III question (must match SHEET_LAYOUT)
+const PHAN_III_CHARS_PER_QUESTION = 5;
+
 /**
- * Detect Phần III answers: numerical digits 0-9.
+ * Detect Phần III answers: multi-character numerical strings (e.g. "-1,5").
+ * Each question has `charsPerQuestion` character positions; each position
+ * finds the best-filled bubble and reads its charValue.
  * @param {Bubble[]} bubbles
  * @param {OpenCVMat} gray
  * @param {number} [questionCount=6]
@@ -124,14 +129,25 @@ export function detectPhanIIAnswers(bubbles, gray, questionCount = 8) {
  */
 export function detectPhanIIIAnswers(bubbles, gray, questionCount = 6) {
   const sectionBubbles = bubbles.filter((b) => b.section === 'section3');
-  const questions = groupByQuestion(sectionBubbles);
+  const byQuestion = groupByQuestion(sectionBubbles);
   /** @type {string[]} */
   const answers = [];
 
   for (let q = 1; q <= questionCount; q++) {
-    const qBubbles = questions[q] || [];
-    const best = findBestFilled(qBubbles, gray);
-    answers.push(best?.digit?.toString() ?? '');
+    const qBubbles = byQuestion[q] || [];
+    const byCharPos = groupByField(qBubbles, 'charPosition');
+    let answer = '';
+
+    for (let pos = 0; pos < PHAN_III_CHARS_PER_QUESTION; pos++) {
+      const posBubbles = byCharPos[pos] || [];
+      const best = findBestFilled(posBubbles, gray);
+      if (best?.charValue !== undefined) {
+        answer += best.charValue;
+      }
+    }
+
+    // Trim trailing whitespace/empty positions
+    answers.push(answer.trimEnd());
   }
 
   return answers;
@@ -164,6 +180,24 @@ function groupByQuestion(bubbles) {
   for (const b of bubbles) {
     if (b.question !== undefined) {
       (groups[b.question] ??= []).push(b);
+    }
+  }
+  return groups;
+}
+
+/**
+ * Group bubbles by an arbitrary numeric field value.
+ * @param {Bubble[]} bubbles
+ * @param {string} fieldName
+ * @returns {Record<number, Bubble[]>}
+ */
+function groupByField(bubbles, fieldName) {
+  /** @type {Record<number, Bubble[]>} */
+  const groups = {};
+  for (const b of bubbles) {
+    const val = b[fieldName];
+    if (val !== undefined) {
+      (groups[val] ??= []).push(b);
     }
   }
   return groups;

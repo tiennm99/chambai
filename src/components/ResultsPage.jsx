@@ -1,32 +1,21 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { calculateScore } from '@/lib/scoring';
+import { calculateClassStatistics } from '@/lib/statistics';
+import StudentDetailModal from './student-detail-modal';
 
-export default function ResultsPage() {
-  const [results, setResults] = useState([]);
-  const [testConfig, setTestConfig] = useState(null);
+export default function ResultsPage({ results: rawResults, config, onResultsUpdate, onResultsClear }) {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [sortKey, setSortKey] = useState('studentId');
   const [sortDir, setSortDir] = useState('asc');
   const [filterText, setFilterText] = useState('');
 
-  useEffect(() => {
-    const savedResults = localStorage.getItem('studentResults');
-    const savedConfig = localStorage.getItem('testConfig');
-
-    if (savedResults && savedConfig) {
-      const resultsData = JSON.parse(savedResults);
-      const configData = JSON.parse(savedConfig);
-      setTestConfig(configData);
-
-      const scoredResults = resultsData.map((r) => ({
-        ...r,
-        score: calculateScore(r, configData),
-      }));
-      setResults(scoredResults);
-    }
-  }, []);
+  // Score all results against current config
+  const results = useMemo(() => {
+    if (!config) return rawResults;
+    return rawResults.map((r) => ({ ...r, score: calculateScore(r, config) }));
+  }, [rawResults, config]);
 
   const handleSort = (key) => {
     if (sortKey === key) {
@@ -41,52 +30,35 @@ export default function ResultsPage() {
     let filtered = results;
     if (filterText) {
       const lower = filterText.toLowerCase();
-      filtered = results.filter((r) => r.studentId.toLowerCase().includes(lower));
+      filtered = results.filter((r) => r.studentId?.toLowerCase().includes(lower));
     }
-
     return [...filtered].sort((a, b) => {
       let cmp = 0;
-      switch (sortKey) {
-        case 'studentId':
-          cmp = a.studentId.localeCompare(b.studentId);
-          break;
-        case 'total':
-          cmp = (a.score?.total ?? 0) - (b.score?.total ?? 0);
-          break;
-        case 'percentage':
-          cmp = (a.score?.percentage ?? 0) - (b.score?.percentage ?? 0);
-          break;
-      }
+      if (sortKey === 'studentId') cmp = (a.studentId || '').localeCompare(b.studentId || '');
+      else if (sortKey === 'total') cmp = (a.score?.total ?? 0) - (b.score?.total ?? 0);
+      else if (sortKey === 'percentage') cmp = (a.score?.percentage ?? 0) - (b.score?.percentage ?? 0);
       return sortDir === 'asc' ? cmp : -cmp;
     });
   }, [results, sortKey, sortDir, filterText]);
 
+  const stats = useMemo(() => calculateClassStatistics(results), [results]);
+
   const clearResults = () => {
     if (confirm('Bạn có chắc chắn muốn xóa tất cả kết quả?')) {
-      localStorage.removeItem('studentResults');
-      setResults([]);
+      onResultsClear();
     }
   };
 
   const exportToCSV = () => {
     if (results.length === 0) return;
-
     const headers = ['SBD', 'Ma de', 'Phan I', 'Phan II', 'Phan III', 'Tong diem', 'Diem toi da', 'Phan tram'];
-
     const csvContent = [
       headers.join(','),
-      ...sortedResults.map((r) =>
-        [
-          r.studentId,
-          r.examCode || '',
-          r.score?.phanI ?? 0,
-          r.score?.phanII ?? 0,
-          r.score?.phanIII ?? 0,
-          r.score?.total ?? 0,
-          r.score?.maxTotal ?? 0,
-          r.score?.percentage ?? 0,
-        ].join(',')
-      ),
+      ...sortedResults.map((r) => [
+        r.studentId, r.examCode || '',
+        r.score?.phanI ?? 0, r.score?.phanII ?? 0, r.score?.phanIII ?? 0,
+        r.score?.total ?? 0, r.score?.maxTotal ?? 0, r.score?.percentage ?? 0,
+      ].join(',')),
     ].join('\n');
 
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -105,28 +77,14 @@ export default function ResultsPage() {
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <h2 className="text-2xl font-bold text-gray-900">Kết quả chấm điểm</h2>
         <div className="flex-1" />
-        <button
-          onClick={exportToCSV}
-          disabled={results.length === 0}
+        <button onClick={exportToCSV} disabled={results.length === 0}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            results.length === 0
-              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-              : 'bg-green-600 text-white hover:bg-green-700'
-          }`}
-        >
-          Xuất CSV
-        </button>
-        <button
-          onClick={clearResults}
-          disabled={results.length === 0}
+            results.length === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'
+          }`}>Xuất CSV</button>
+        <button onClick={clearResults} disabled={results.length === 0}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            results.length === 0
-              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-              : 'bg-red-600 text-white hover:bg-red-700'
-          }`}
-        >
-          Xóa kết quả
-        </button>
+            results.length === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-700'
+          }`}>Xóa kết quả</button>
       </div>
 
       {results.length === 0 ? (
@@ -135,30 +93,24 @@ export default function ResultsPage() {
         </div>
       ) : (
         <div>
+          {/* Statistics */}
+          {stats && <StatisticsSummary stats={stats} />}
+
           {/* Filter */}
           <div className="mb-4">
-            <input
-              type="text"
-              placeholder="Tìm theo SBD..."
-              value={filterText}
+            <input type="text" placeholder="Tìm theo SBD..." value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
-              className="w-64 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <span className="text-sm text-gray-500 ml-3">
-              {sortedResults.length} / {results.length} kết quả
-            </span>
+              className="w-64 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <span className="text-sm text-gray-500 ml-3">{sortedResults.length} / {results.length} kết quả</span>
           </div>
 
-          {/* Summary Table */}
+          {/* Table */}
           <div className="overflow-x-auto mb-8">
             <table className="min-w-full border border-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   <ThBtn onClick={() => handleSort('studentId')}>SBD{sortArrow('studentId')}</ThBtn>
-                  <Th>Mã đề</Th>
-                  <Th>Phần I</Th>
-                  <Th>Phần II</Th>
-                  <Th>Phần III</Th>
+                  <Th>Mã đề</Th><Th>Phần I</Th><Th>Phần II</Th><Th>Phần III</Th>
                   <ThBtn onClick={() => handleSort('total')}>Tổng{sortArrow('total')}</ThBtn>
                   <ThBtn onClick={() => handleSort('percentage')}>%{sortArrow('percentage')}</ThBtn>
                   <Th>Chi tiết</Th>
@@ -173,16 +125,9 @@ export default function ResultsPage() {
                     <Td>{result.score?.phanII ?? 0}</Td>
                     <Td>{result.score?.phanIII ?? 0}</Td>
                     <Td className="font-semibold">{result.score?.total ?? 0}/{result.score?.maxTotal ?? 0}</Td>
+                    <Td><ScoreBadge percentage={result.score?.percentage ?? 0} /></Td>
                     <Td>
-                      <ScoreBadge percentage={result.score?.percentage ?? 0} />
-                    </Td>
-                    <Td>
-                      <button
-                        onClick={() => setSelectedStudent(result.id)}
-                        className="text-blue-600 hover:text-blue-800 text-sm"
-                      >
-                        Xem
-                      </button>
+                      <button onClick={() => setSelectedStudent(result.id)} className="text-blue-600 hover:text-blue-800 text-sm">Xem</button>
                     </Td>
                   </tr>
                 ))}
@@ -190,13 +135,8 @@ export default function ResultsPage() {
             </table>
           </div>
 
-          {/* Student Detail Modal */}
           {selectedStudent && selectedData && (
-            <StudentDetailModal
-              student={selectedData}
-              testConfig={testConfig}
-              onClose={() => setSelectedStudent(null)}
-            />
+            <StudentDetailModal student={selectedData} testConfig={config} onClose={() => setSelectedStudent(null)} />
           )}
         </div>
       )}
@@ -204,141 +144,55 @@ export default function ResultsPage() {
   );
 }
 
-function StudentDetailModal({ student, testConfig, onClose }) {
+// --- Statistics ---
+
+function StatisticsSummary({ stats }) {
+  const maxBucket = Math.max(...Object.values(stats.distribution), 1);
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto m-4">
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-4">
-            <div>
-              <h3 className="text-xl font-semibold">Chi tiết - SBD: {student.studentId}</h3>
-              {student.examCode && (
-                <p className="text-sm text-gray-500">Mã đề: {student.examCode}</p>
-              )}
-            </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+    <div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50">
+      <h3 className="text-lg font-semibold mb-3">Thống kê lớp</h3>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+        <StatCard label="Sĩ số" value={stats.count} />
+        <StatCard label="Điểm TB" value={stats.mean} />
+        <StatCard label="Trung vị" value={stats.median} />
+        <StatCard label="Thấp nhất" value={stats.min} />
+        <StatCard label="Cao nhất" value={stats.max} />
+      </div>
+      <div className="flex items-end gap-2 h-16">
+        {Object.entries(stats.distribution).map(([range, count]) => (
+          <div key={range} className="flex-1 flex flex-col items-center">
+            <div className="w-full bg-blue-500 rounded-t" style={{ height: `${(count / maxBucket) * 48}px`, minHeight: count > 0 ? '4px' : '0' }} />
+            <span className="text-xs text-gray-500 mt-1">{range}%</span>
+            <span className="text-xs font-medium">{count}</span>
           </div>
-
-          {/* Score summary */}
-          {student.score && (
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <ScoreCard label="Phần I" score={student.score.phanI} />
-              <ScoreCard label="Phần II" score={student.score.phanII} />
-              <ScoreCard label="Phần III" score={student.score.phanIII} />
-            </div>
-          )}
-
-          <div className="space-y-6">
-            {/* Phan I */}
-            <div>
-              <h4 className="font-semibold mb-2">Phần I - Trắc nghiệm</h4>
-              <div className="grid grid-cols-5 sm:grid-cols-8 gap-1.5">
-                {student.phanI.map((answer, i) => {
-                  const correct = testConfig?.phanI.answers[i];
-                  const isCorrect = answer && answer === correct;
-                  return (
-                    <div
-                      key={i}
-                      className={`p-1.5 rounded text-center text-xs ${
-                        !answer ? 'bg-gray-100 text-gray-400' :
-                        isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                      }`}
-                    >
-                      <span className="font-medium">{i + 1}:</span> {answer || '-'}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Phan II */}
-            <div>
-              <h4 className="font-semibold mb-2">Phần II - Đúng/Sai</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {student.phanII.map((answer, i) => (
-                  <div key={i} className="border rounded p-2 text-sm">
-                    <span className="font-medium">Câu {i + 1}: </span>
-                    {['a', 'b', 'c', 'd'].map((opt) => {
-                      const correct = testConfig?.phanII.answers[i]?.[opt];
-                      const isCorrect = answer[opt] === correct;
-                      return (
-                        <span
-                          key={opt}
-                          className={`inline-block px-1.5 py-0.5 rounded mx-0.5 ${
-                            isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                          }`}
-                        >
-                          {opt.toUpperCase()}: {answer[opt] ? 'Đ' : 'S'}
-                        </span>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Phan III */}
-            <div>
-              <h4 className="font-semibold mb-2">Phần III - Tự luận số</h4>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                {student.phanIII.map((answer, i) => {
-                  const correct = testConfig?.phanIII.answers[i];
-                  const isCorrect = answer && answer === correct;
-                  return (
-                    <div
-                      key={i}
-                      className={`p-2 rounded text-center text-sm ${
-                        !answer ? 'bg-gray-100 text-gray-400' :
-                        isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                      }`}
-                    >
-                      <span className="font-medium">{i + 1}:</span> {answer || '-'}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
+        ))}
       </div>
     </div>
   );
 }
 
-// --- Small UI components ---
+function StatCard({ label, value }) {
+  return (
+    <div className="bg-white rounded-lg p-2 text-center border border-gray-200">
+      <div className="text-xs text-gray-500">{label}</div>
+      <div className="text-lg font-bold text-gray-900">{value}</div>
+    </div>
+  );
+}
+
+// --- Table helpers ---
 
 function Th({ children }) {
   return <th className="px-3 py-2 text-left text-sm font-medium text-gray-700">{children}</th>;
 }
-
 function ThBtn({ children, onClick }) {
-  return (
-    <th className="px-3 py-2 text-left text-sm font-medium text-gray-700 cursor-pointer hover:text-blue-600" onClick={onClick}>
-      {children}
-    </th>
-  );
+  return <th className="px-3 py-2 text-left text-sm font-medium text-gray-700 cursor-pointer hover:text-blue-600" onClick={onClick}>{children}</th>;
 }
-
 function Td({ children, className = '' }) {
   return <td className={`px-3 py-2 text-sm text-gray-900 ${className}`}>{children}</td>;
 }
-
 function ScoreBadge({ percentage }) {
   const color = percentage >= 80 ? 'bg-green-100 text-green-800' :
-                percentage >= 50 ? 'bg-yellow-100 text-yellow-800' :
-                'bg-red-100 text-red-800';
-  return (
-    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>
-      {percentage}%
-    </span>
-  );
-}
-
-function ScoreCard({ label, score }) {
-  return (
-    <div className="bg-gray-50 rounded-lg p-3 text-center">
-      <div className="text-sm text-gray-500">{label}</div>
-      <div className="text-lg font-bold text-gray-900">{score}</div>
-    </div>
-  );
+    percentage >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+  return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>{percentage}%</span>;
 }

@@ -1,8 +1,8 @@
-export default function Navigation({ currentPage, onPageChange }) {
+export default function Navigation({ currentPage, onPageChange, configSaved, hasResults }) {
   const buttons = [
-    { key: 'config', label: '1. Cấu hình đề thi', description: 'Thiết lập câu hỏi và đáp án' },
-    { key: 'upload', label: '2. Tải và xử lý ảnh', description: 'Nhận diện bài thi' },
-    { key: 'results', label: '3. Kết quả', description: 'Xem điểm và xuất CSV' },
+    { key: 'config', label: '1. Cấu hình đề thi', description: 'Thiết lập câu hỏi và đáp án', done: configSaved },
+    { key: 'upload', label: '2. Tải và xử lý ảnh', description: 'Nhận diện bài thi', done: hasResults, disabled: !configSaved },
+    { key: 'results', label: '3. Kết quả', description: 'Xem điểm và xuất CSV', done: false, disabled: !hasResults },
   ];
 
   return (
@@ -11,15 +11,26 @@ export default function Navigation({ currentPage, onPageChange }) {
         {buttons.map((button) => (
           <button
             key={button.key}
-            onClick={() => onPageChange(button.key)}
+            onClick={() => !button.disabled && onPageChange(button.key)}
+            title={button.disabled ? 'Vui lòng hoàn thành bước trước' : ''}
             className={`flex-1 p-4 rounded-lg text-left transition-all duration-200 ${
-              currentPage === button.key
-                ? 'bg-blue-600 text-white shadow-lg'
-                : 'bg-gray-50 hover:bg-gray-100 text-gray-700'
+              button.disabled
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                : currentPage === button.key
+                  ? 'bg-blue-600 text-white shadow-lg'
+                  : 'bg-gray-50 hover:bg-gray-100 text-gray-700'
             }`}
           >
-            <div className="font-semibold text-lg">{button.label}</div>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-lg">{button.label}</span>
+              {button.done && (
+                <span className={`text-sm ${currentPage === button.key ? 'text-green-200' : 'text-green-600'}`}>
+                  &#10003;
+                </span>
+              )}
+            </div>
             <div className={`text-sm mt-1 ${
+              button.disabled ? 'text-gray-400' :
               currentPage === button.key ? 'text-blue-100' : 'text-gray-500'
             }`}>
               {button.description}

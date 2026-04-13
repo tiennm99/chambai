@@ -1,24 +1,107 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Navigation from '@/components/Navigation';
 import ConfigurationPage from '@/components/ConfigurationPage';
 import UploadPage from '@/components/UploadPage';
 import ResultsPage from '@/components/ResultsPage';
+import { clearDebugImages } from '@/lib/indexed-db-store';
+
+const DEFAULT_CONFIG = {
+  phanI: { questionCount: 40, answers: [] },
+  phanII: { questionCount: 8, answers: [] },
+  phanIII: { questionCount: 6, answers: [] },
+  scoring: {
+    phanI: { pointsPerQuestion: 0.25 },
+    phanII: { pointsPerQuestion: 0.25, partialCredit: true },
+    phanIII: { pointsPerQuestion: 0.5 },
+  },
+};
 
 export default function Home() {
   const [currentPage, setCurrentPage] = useState('config');
+  const [config, setConfig] = useState(DEFAULT_CONFIG);
+  const [results, setResults] = useState([]);
+  const [configSaved, setConfigSaved] = useState(false);
+
+  // Load persisted state on mount
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('testConfig');
+    const savedResults = localStorage.getItem('studentResults');
+    if (savedConfig) {
+      setConfig(JSON.parse(savedConfig));
+      setConfigSaved(true);
+    }
+    if (savedResults) {
+      setResults(JSON.parse(savedResults));
+    }
+  }, []);
+
+  const handleConfigSave = (newConfig) => {
+    setConfig(newConfig);
+    setConfigSaved(true);
+    localStorage.setItem('testConfig', JSON.stringify(newConfig));
+  };
+
+  const handleResultsAdd = (newResults) => {
+    setResults((prev) => {
+      const merged = [...prev, ...newResults];
+      // Strip debugImageUrl before localStorage (stored in IndexedDB separately)
+      const toSave = merged.map(({ debugImageUrl, ...rest }) => rest);
+      localStorage.setItem('studentResults', JSON.stringify(toSave));
+      return merged;
+    });
+  };
+
+  const handleResultsUpdate = (updatedResults) => {
+    setResults(updatedResults);
+    const toSave = updatedResults.map(({ debugImageUrl, ...rest }) => rest);
+    localStorage.setItem('studentResults', JSON.stringify(toSave));
+  };
+
+  const handleResultsClear = () => {
+    setResults([]);
+    localStorage.removeItem('studentResults');
+    clearDebugImages().catch(() => {});
+  };
+
+  const handleResetAll = () => {
+    setConfig(DEFAULT_CONFIG);
+    setResults([]);
+    setConfigSaved(false);
+    localStorage.clear();
+    clearDebugImages().catch(() => {});
+  };
 
   const renderPage = () => {
     switch (currentPage) {
       case 'config':
-        return <ConfigurationPage />;
+        return (
+          <ConfigurationPage
+            config={config}
+            onConfigChange={setConfig}
+            onSave={handleConfigSave}
+            onResetAll={handleResetAll}
+          />
+        );
       case 'upload':
-        return <UploadPage />;
+        return (
+          <UploadPage
+            config={config}
+            onResultsAdd={handleResultsAdd}
+          />
+        );
       case 'results':
-        return <ResultsPage />;
+        return (
+          <ResultsPage
+            results={results}
+            config={config}
+            onResultsUpdate={handleResultsUpdate}
+            onResultsClear={handleResultsClear}
+          />
+        );
       default:
-        return <ConfigurationPage />;
+        return null;
     }
   };
 
@@ -37,6 +120,8 @@ export default function Home() {
         <Navigation
           currentPage={currentPage}
           onPageChange={setCurrentPage}
+          configSaved={configSaved}
+          hasResults={results.length > 0}
         />
 
         <div className="mt-8">
