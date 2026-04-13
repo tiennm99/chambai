@@ -1,21 +1,28 @@
-// IndexedDB wrapper for storing debug images (avoids localStorage 5MB limit)
-// DB: 'chambai', Store: 'debugImages', keyed by student result ID
+// IndexedDB wrapper for chambai app data
+// Stores: debugImages (v1), sessions + results (v2)
 
 const DB_NAME = 'chambai';
-const STORE_NAME = 'debugImages';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 /**
- * Open (or create) the IndexedDB database.
+ * Open (or create) the IndexedDB database with versioned schema.
  * @returns {Promise<IDBDatabase>}
  */
-function openDB() {
+export function openDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      const oldVersion = event.oldVersion;
+
+      if (oldVersion < 1) {
+        db.createObjectStore('debugImages', { keyPath: 'id' });
+      }
+      if (oldVersion < 2) {
+        const sessionStore = db.createObjectStore('sessions', { keyPath: 'id' });
+        sessionStore.createIndex('date', 'date');
+        const resultStore = db.createObjectStore('results', { keyPath: 'id' });
+        resultStore.createIndex('sessionId', 'sessionId');
       }
     };
     request.onsuccess = () => resolve(request.result);

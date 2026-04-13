@@ -1,6 +1,25 @@
-// Image preprocessing: grayscale conversion, thresholding, noise reduction
+// Image preprocessing: grayscale conversion, thresholding, noise reduction, resize
 /** @typedef {import('./types.js').OpenCVMat} OpenCVMat */
 /** @typedef {import('./types.js').Bubble} Bubble */
+
+const MAX_PROCESSING_WIDTH = 2000;
+
+/**
+ * Downscale canvas to max width for faster, more reliable processing.
+ * Phone photos (12MP+) are too large for accurate bubble grid alignment.
+ * @param {HTMLCanvasElement} canvas
+ * @returns {HTMLCanvasElement} - resized canvas (or original if already small enough)
+ */
+export function resizeForProcessing(canvas) {
+  if (canvas.width <= MAX_PROCESSING_WIDTH) return canvas;
+  const scale = MAX_PROCESSING_WIDTH / canvas.width;
+  const resized = document.createElement('canvas');
+  resized.width = MAX_PROCESSING_WIDTH;
+  resized.height = Math.round(canvas.height * scale);
+  const ctx = resized.getContext('2d');
+  ctx.drawImage(canvas, 0, 0, resized.width, resized.height);
+  return resized;
+}
 
 /**
  * Convert image to grayscale and apply adaptive thresholding.
@@ -41,6 +60,27 @@ export function preprocessForBubbleDetection(src) {
   kernel.delete();
 
   return { gray, thresh: closed };
+}
+
+/**
+ * Compute adaptive fill threshold from empty bubble regions.
+ * Measures fill of all bubbles, uses low-fill ones as "empty" baseline,
+ * then sets threshold above that baseline.
+ * @param {Bubble[]} bubbles - all bubbles from grid
+ * @param {OpenCVMat} gray - grayscale image
+ * @returns {number} - fill threshold (clamped 0.25-0.50, fallback 0.35)
+ */
+export function computeAdaptiveThreshold(bubbles, gray) {
+  const fills = bubbles.map((b) => measureBubbleFill(b, gray));
+  const empties = fills.filter((f) => f < 0.3);
+  if (empties.length < 20) return 0.35;
+
+  const mean = empties.reduce((a, b) => a + b, 0) / empties.length;
+  const stddev = Math.sqrt(
+    empties.reduce((a, v) => a + (v - mean) ** 2, 0) / empties.length
+  );
+  const threshold = Math.min(0.5, Math.max(0.25, mean + 1.5 * stddev));
+  return Math.round(threshold * 100) / 100;
 }
 
 /**

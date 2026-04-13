@@ -11,23 +11,41 @@ A Next.js web application for automatically scoring Vietnamese multiple choice t
 
 - **Image Processing**: 
   - Drag & drop image upload
-  - Automatic bubble detection using OpenCV.js
-  - Student ID recognition
+  - Automatic image resize for large photos (12MP+ phone cameras)
+  - Adaptive fill threshold (per-image baseline from empty bubbles)
+  - Image quality pre-check (blur detection, resolution, corner markers)
+  - Bubble detection using OpenCV.js
+  - Student ID and exam code recognition
   - Answer recognition for all question types
 
-- **Results Management**:
+- **Manual Correction**:
+  - Click-to-toggle answer correction in editable grid
+  - Low-confidence detections highlighted for review
+  - Live score preview during correction
+
+- **Session Management**:
+  - Create, list, delete exam sessions
+  - Session-based data isolation (config + results per session)
+  - Session export/import (.chambai.json files)
+  - Automatic localStorage-to-IndexedDB migration
+
+- **Results & Analytics**:
   - Automatic scoring calculation
+  - Per-question item analysis (correct%, wrong%, blank%, difficulty)
+  - Score distribution histogram with configurable buckets
+  - Class statistics (mean, median, min, max)
   - Detailed student results view
   - CSV export functionality
-  - Data persistence using localStorage
+  - Print-optimized layout
+  - Data persistence using IndexedDB
 
 ## Tech Stack
 
 - **Frontend**: Next.js 15
 - **Styling**: Tailwind CSS
 - **Image Processing**: OpenCV.js
-- **Data Export**: CSV generation
-- **Storage**: localStorage
+- **Data Export**: CSV generation, JSON session export
+- **Storage**: IndexedDB (sessions, results, debug images)
 
 ## Getting Started
 
@@ -45,20 +63,31 @@ A Next.js web application for automatically scoring Vietnamese multiple choice t
 
 ## Usage
 
-### 1. Configure Test (Cấu hình đề thi)
+### 1. Create a Session
+- Click "Tạo phiên mới" on the landing page
+- Name your exam session
+
+### 2. Configure Test (Cấu hình đề thi)
 - Set the number of questions for each section
-- Input the correct answers for each question
+- Input correct answers (manual, paste from Excel, or CSV import)
 - Save the configuration
 
-### 2. Upload and Process Images (Tải và xử lý ảnh)
+### 3. Upload and Process Images (Tải và xử lý ảnh)
 - Drag and drop or select image files (JPG, PNG)
 - Click "Xử lý ảnh" to process the images
-- Wait for the automatic recognition to complete
+- Review quality warnings for blurry/low-resolution images
+- Wait for automatic recognition to complete
 
-### 3. View Results (Kết quả)
-- Review automatically calculated scores
-- View detailed answers for each student
-- Export results to CSV format
+### 4. Review and Correct (Sửa đáp án)
+- Click "Xem" on any student result
+- Click "Sửa đáp án" to manually correct detected answers
+- Low-confidence detections are highlighted in yellow
+
+### 5. View Results (Kết quả)
+- Review scores in the results table
+- Switch to "Phân tích câu hỏi" for per-question analysis
+- Switch to "Phân phối điểm" for score distribution
+- Export results to CSV or print
 
 ## Project Structure
 
@@ -66,81 +95,63 @@ A Next.js web application for automatically scoring Vietnamese multiple choice t
 src/
 ├── app/
 │   ├── layout.jsx              # Root layout with OpenCV.js integration
-│   ├── page.jsx                # Main application page
-│   └── globals.css             # Global styles
+│   ├── page.jsx                # Main app: session management + page routing
+│   └── globals.css             # Global styles + print CSS
 ├── components/
 │   ├── Navigation.jsx          # Navigation between pages
-│   ├── ConfigurationPage.jsx   # Test configuration + scoring config
-│   ├── UploadPage.jsx          # Image upload with thumbnails and progress
-│   ├── ResultsPage.jsx         # Results table with sorting/filtering/export
-│   └── ImageProcessor.jsx      # Orchestrator for the detection pipeline
+│   ├── ConfigurationPage.jsx   # Test config + scoring + CSV import
+│   ├── UploadPage.jsx          # Image upload with progress + quality warnings
+│   ├── ResultsPage.jsx         # Results table + tabs (analysis, distribution)
+│   ├── ImageProcessor.jsx      # Thin wrapper calling detection pipeline
+│   ├── session-list.jsx        # Session list with create/delete/export/import
+│   ├── session-header.jsx      # Active session header bar
+│   ├── student-detail-modal.jsx # Per-student detail + correction button
+│   ├── manual-correction-modal.jsx # Editable answer grid with live scoring
+│   ├── item-analysis-view.jsx  # Per-question analysis table
+│   ├── score-distribution-chart.jsx # Histogram with mean/median
+│   ├── phan-i-answer-grid.jsx  # Keyboard-navigable answer input grid
+│   └── image-processor-error-boundary.jsx # Error boundary for pipeline
 └── lib/
-    ├── image-preprocessing.js  # Grayscale, thresholding, bubble fill measurement
+    ├── detection-pipeline.js   # Full OMR pipeline (extracted, pure function)
+    ├── image-preprocessing.js  # Grayscale, thresholding, resize, adaptive threshold
+    ├── image-quality-check.js  # Blur/resolution/marker validation
     ├── marker-detection.js     # Corner marker detection for alignment
     ├── bubble-grid-generator.js # Vietnamese THPT answer sheet layout
     ├── answer-detection.js     # Student ID, exam code, answer detection
     ├── debug-visualization.js  # Debug overlay drawing
-    └── scoring.js              # Weighted scoring (Phần I/II/III)
-```
-
-## Data Structure
-
-### Test Configuration
-```js
-// TestConfig shape
-{
-  phanI: { questionCount: 40, answers: ['A', 'B', ...] },
-  phanII: { questionCount: 8, answers: [{ a: true, b: false, c: true, d: false }, ...] },
-  phanIII: { questionCount: 6, answers: ['42', '7', ...] },
-}
-```
-
-### Student Results
-```js
-// StudentResult shape
-{
-  id: 'student_123',
-  fileName: 'scan_001.jpg',
-  studentId: '12345678',
-  phanI: ['A', 'B', ...],
-  phanII: [{ a: true, b: false, c: true, d: false }, ...],
-  phanIII: ['42', '7', ...],
-  score: { phanI: 8, phanII: 6, phanIII: 3, total: 17, percentage: 85 },
-}
+    ├── scoring.js              # Weighted scoring (Phần I/II/III)
+    ├── statistics.js           # Class-level statistics
+    ├── item-analysis.js        # Per-question item analysis
+    ├── indexed-db-store.js     # Core IndexedDB (openDB, debug images)
+    ├── indexed-db-sessions.js  # Session CRUD
+    ├── indexed-db-results.js   # Results CRUD (session-scoped)
+    ├── local-storage-migration.js # One-time localStorage migration
+    ├── session-export-import.js # Export/import sessions as JSON
+    └── types.js                # JSDoc type definitions
 ```
 
 ## Image Processing
 
 The application uses OpenCV.js for:
 - Converting images to grayscale and adaptive thresholding
+- Auto-resizing large images (>2000px width) for reliable processing
+- Adaptive fill threshold computation from empty bubble baseline
+- Image quality validation (blur, resolution, corner markers)
 - Corner marker detection for sheet alignment
 - Contour-based bubble detection (not HoughCircles)
 - Region of Interest (ROI) extraction and fill measurement
 - Debug visualization with color-coded overlay
 
 The detection pipeline follows the Vietnamese THPT answer sheet layout (Công văn 1239/BGDĐT 2025):
-1. Preprocess image (grayscale + Gaussian blur + adaptive threshold)
-2. Detect 4 corner markers for alignment reference
-3. Generate bubble grid using proportional layout ratios
-4. Measure bubble fill intensity for answer detection
-5. Create debug overlay showing all detected positions
-
-## Development Notes
-
-- The application uses localStorage for data persistence
-- OpenCV.js is loaded asynchronously for browser compatibility
-- All text is in Vietnamese for the target audience
-- Responsive design works on mobile and desktop
-- Error handling is implemented for common use cases
-
-## Future Enhancements
-
-- Real OpenCV.js bubble detection implementation
-- Batch processing optimization
-- Image quality validation
-- Template-based recognition for better accuracy
-- Database integration for persistent storage
-- User authentication and multi-teacher support
+1. Resize image to max 2000px width
+2. Preprocess (grayscale + Gaussian blur + adaptive threshold)
+3. Detect 4 corner markers for alignment reference
+4. Validate image quality (blur, resolution, markers)
+5. Apply perspective correction if needed
+6. Generate bubble grid using proportional layout ratios
+7. Compute adaptive fill threshold from empty bubble regions
+8. Measure bubble fill intensity for answer detection
+9. Return results with confidence map for manual review
 
 ## License
 

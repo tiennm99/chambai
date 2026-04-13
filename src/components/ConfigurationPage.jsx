@@ -112,6 +112,33 @@ export default function ConfigurationPage({ config, onConfigChange, onSave, onRe
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Nhập từ CSV:</label>
+              <input
+                type="file"
+                accept=".csv,.txt"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    const text = (ev.target?.result || '').trim();
+                    const answers = text.split(/[,\t\n\r\s]+/)
+                      .map((s) => s.trim().toUpperCase())
+                      .filter((s) => ['A', 'B', 'C', 'D'].includes(s));
+                    if (answers.length > 0) {
+                      onConfigChange({ ...config, phanI: { ...config.phanI, answers: answers.slice(0, config.phanI.questionCount) } });
+                      showStatus('success', `Đã nhập ${Math.min(answers.length, config.phanI.questionCount)} đáp án từ CSV`);
+                    } else {
+                      showStatus('error', 'Không tìm thấy đáp án hợp lệ trong file');
+                    }
+                  };
+                  reader.readAsText(file, 'UTF-8');
+                  e.target.value = '';
+                }}
+                className="text-sm text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+            </div>
           </div>
           <p className="text-xs text-gray-500 mb-3">
             Nhấn vào câu hỏi rồi gõ A/B/C/D trên bàn phím để nhập nhanh. Mũi tên để di chuyển.

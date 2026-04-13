@@ -1,19 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { preprocessForBubbleDetection } from '@/lib/image-preprocessing';
-import { detectCornerMarkers, applyPerspectiveCorrection } from '@/lib/marker-detection';
-import { generateBubbleGrid } from '@/lib/bubble-grid-generator';
-import {
-  detectStudentId,
-  detectExamCode,
-  detectPhanIAnswers,
-  detectPhanIIAnswers,
-  detectPhanIIIAnswers,
-} from '@/lib/answer-detection';
-import { createDebugVisualization } from '@/lib/debug-visualization';
+import { resizeForProcessing } from '@/lib/image-preprocessing';
+import { runDetectionPipeline } from '@/lib/detection-pipeline';
 
-export default function ImageProcessor({ imageFile, onProcessingComplete }) {
+export default function ImageProcessor({ imageFile, testConfig, onProcessingComplete }) {
   const [processing, setProcessing] = useState(false);
   const [cvLoaded, setCvLoaded] = useState(false);
   const [debugImageUrl, setDebugImageUrl] = useState(null);
@@ -35,18 +26,6 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }) {
     document.head.appendChild(script);
   }, []);
 
-  const getTestConfig = () => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('testConfig');
-      if (saved) return JSON.parse(saved);
-    }
-    return {
-      phanI: { questionCount: 40, answers: [] },
-      phanII: { questionCount: 8, answers: [] },
-      phanIII: { questionCount: 6, answers: [] },
-    };
-  };
-
   const processImage = useCallback(async () => {
     if (!cvLoaded || !window.cv) return;
 
@@ -58,23 +37,37 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }) {
       const img = new Image();
 
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        ctx?.drawImage(img, 0, 0);
+        try {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx?.drawImage(img, 0, 0);
 
-        const imageData = ctx?.getImageData(0, 0, canvas.width, canvas.height);
-        if (!imageData) {
+          const processCanvas = resizeForProcessing(canvas);
+          const processCtx = processCanvas.getContext('2d');
+          const imageData = processCtx?.getImageData(0, 0, processCanvas.width, processCanvas.height);
+          if (!imageData) {
+            setProcessing(false);
+            return;
+          }
+
+          const config = testConfig || {
+            phanI: { questionCount: 40, answers: [] },
+            phanII: { questionCount: 8, answers: [] },
+            phanIII: { questionCount: 6, answers: [] },
+          };
+
+          const { result, debugUrl } = runDetectionPipeline(imageData, canvas, config);
+          setDebugImageUrl(debugUrl);
+          onProcessingComplete(result);
+        } catch (err) {
+          console.error('Pipeline error:', err);
+          onProcessingComplete({ error: true, errorMessage: err.message });
+        } finally {
+          URL.revokeObjectURL(imageUrl);
           setProcessing(false);
-          return;
         }
-
-        const { result, debugUrl } = runDetectionPipeline(imageData, canvas, getTestConfig());
-        setDebugImageUrl(debugUrl);
-        onProcessingComplete(result);
-        URL.revokeObjectURL(imageUrl);
-        setProcessing(false);
       };
 
       img.src = imageUrl;
@@ -82,7 +75,7 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }) {
       console.error('Error processing image:', error);
       setProcessing(false);
     }
-  }, [cvLoaded, imageFile, onProcessingComplete]);
+  }, [cvLoaded, imageFile, testConfig, onProcessingComplete]);
 
   useEffect(() => {
     if (cvLoaded && imageFile) {
@@ -147,47 +140,4 @@ export default function ImageProcessor({ imageFile, onProcessingComplete }) {
       )}
     </div>
   );
-}
-
-/** Pure function: runs the full detection pipeline and returns results + debug image URL */
-function runDetectionPipeline(imageData, originalCanvas, testConfig) {
-  const cv = window.cv;
-
-  const src = cv.matFromImageData(imageData);
-  const { gray, thresh } = preprocessForBubbleDetection(src);
-  const markers = detectCornerMarkers(thresh, imageData.width, imageData.height);
-
-  // Apply perspective correction for skewed photos (skips if angle < 2 degrees)
-  const { corrected, markers: activeMarkers, applied: perspectiveApplied } =
-    applyPerspectiveCorrection(gray, markers, imageData.width, imageData.height);
-
-  const activeGray = perspectiveApplied ? corrected : gray;
-  const activeWidth = perspectiveApplied ? corrected.cols : imageData.width;
-  const activeHeight = perspectiveApplied ? corrected.rows : imageData.height;
-
-  const bubbles = generateBubbleGrid(activeMarkers, activeWidth, activeHeight);
-
-  const studentId = detectStudentId(bubbles, activeGray);
-  const examCode = detectExamCode(bubbles, activeGray);
-  const phanI = detectPhanIAnswers(bubbles, activeGray, testConfig.phanI.questionCount);
-  const phanII = detectPhanIIAnswers(bubbles, activeGray, testConfig.phanII.questionCount);
-  const phanIII = detectPhanIIIAnswers(bubbles, activeGray, testConfig.phanIII.questionCount);
-
-  const result = {
-    studentId,
-    examCode,
-    phanI,
-    phanII,
-    phanIII,
-    confidence: 0.85,
-  };
-
-  const debugUrl = createDebugVisualization(originalCanvas, bubbles, result, testConfig, activeGray);
-
-  src.delete();
-  gray.delete();
-  thresh.delete();
-  if (perspectiveApplied) corrected.delete();
-
-  return { result: { ...result, debugImageUrl: debugUrl }, debugUrl };
 }

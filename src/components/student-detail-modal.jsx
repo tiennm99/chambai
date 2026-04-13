@@ -2,13 +2,31 @@
 
 import { useState, useEffect } from 'react';
 import { getDebugImage } from '@/lib/indexed-db-store';
+import ManualCorrectionModal from './manual-correction-modal';
 
-export default function StudentDetailModal({ student, testConfig, onClose }) {
+export default function StudentDetailModal({ student, testConfig, onClose, onResultUpdate }) {
   const [debugImageUrl, setDebugImageUrl] = useState(null);
+  const [showCorrection, setShowCorrection] = useState(false);
 
   useEffect(() => {
     getDebugImage(student.id).then((url) => setDebugImageUrl(url)).catch(() => {});
   }, [student.id]);
+
+  const handleCorrectionSave = (correctedStudent) => {
+    setShowCorrection(false);
+    if (onResultUpdate) onResultUpdate(correctedStudent);
+  };
+
+  if (showCorrection) {
+    return (
+      <ManualCorrectionModal
+        student={student}
+        testConfig={testConfig}
+        onSave={handleCorrectionSave}
+        onClose={() => setShowCorrection(false)}
+      />
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -19,7 +37,15 @@ export default function StudentDetailModal({ student, testConfig, onClose }) {
               <h3 className="text-xl font-semibold">Chi tiết - SBD: {student.studentId}</h3>
               {student.examCode && <p className="text-sm text-gray-500">Mã đề: {student.examCode}</p>}
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowCorrection(true)}
+                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Sửa đáp án
+              </button>
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            </div>
           </div>
 
           {/* Score summary */}

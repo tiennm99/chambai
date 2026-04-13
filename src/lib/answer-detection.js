@@ -4,25 +4,25 @@
 /** @typedef {import('./types.js').TrueFalseAnswer} TrueFalseAnswer */
 import { measureBubbleFill } from './image-preprocessing';
 
-const FILL_THRESHOLD = 0.35;
+const DEFAULT_FILL_THRESHOLD = 0.35;
 
 /**
  * Detect student ID from bubble grid (8 digits, each column has rows 0-9).
  * @param {Bubble[]} bubbles
  * @param {OpenCVMat} gray
+ * @param {number} [threshold]
  * @returns {string}
  */
-export function detectStudentId(bubbles, gray) {
+export function detectStudentId(bubbles, gray, threshold = DEFAULT_FILL_THRESHOLD) {
   const idBubbles = bubbles.filter((b) => b.section === 'studentId');
   if (idBubbles.length === 0) return 'UNKNOWN';
 
-  // Group by column (each column = one digit position)
   const columns = groupByColumn(idBubbles);
   let studentId = '';
 
   for (let col = 0; col < 8; col++) {
     const colBubbles = columns[col] || [];
-    const best = findBestFilled(colBubbles, gray);
+    const best = findBestFilled(colBubbles, gray, threshold);
     if (best && best.row !== undefined) {
       studentId += best.row.toString();
     }
@@ -35,9 +35,10 @@ export function detectStudentId(bubbles, gray) {
  * Detect exam code from bubble grid (4 digits).
  * @param {Bubble[]} bubbles
  * @param {OpenCVMat} gray
+ * @param {number} [threshold]
  * @returns {string}
  */
-export function detectExamCode(bubbles, gray) {
+export function detectExamCode(bubbles, gray, threshold = DEFAULT_FILL_THRESHOLD) {
   const codeBubbles = bubbles.filter((b) => b.section === 'examCode');
   if (codeBubbles.length === 0) return '';
 
@@ -46,7 +47,7 @@ export function detectExamCode(bubbles, gray) {
 
   for (let col = 0; col < 4; col++) {
     const colBubbles = columns[col] || [];
-    const best = findBestFilled(colBubbles, gray);
+    const best = findBestFilled(colBubbles, gray, threshold);
     if (best && best.row !== undefined) {
       code += best.row.toString();
     }
@@ -57,24 +58,34 @@ export function detectExamCode(bubbles, gray) {
 
 /**
  * Detect Phần I answers: multiple choice A/B/C/D for 40 questions.
+ * Also returns confidence map with fill values per option.
  * @param {Bubble[]} bubbles
  * @param {OpenCVMat} gray
  * @param {number} [questionCount=40]
- * @returns {string[]}
+ * @param {number} [threshold]
+ * @returns {{ answers: string[], confidenceMap: Record<number, Record<string, number>> }}
  */
-export function detectPhanIAnswers(bubbles, gray, questionCount = 40) {
+export function detectPhanIAnswers(bubbles, gray, questionCount = 40, threshold = DEFAULT_FILL_THRESHOLD) {
   const sectionBubbles = bubbles.filter((b) => b.section === 'section1');
   const questions = groupByQuestion(sectionBubbles);
   /** @type {string[]} */
   const answers = [];
+  /** @type {Record<number, Record<string, number>>} */
+  const confidenceMap = {};
 
   for (let q = 1; q <= questionCount; q++) {
     const qBubbles = questions[q] || [];
-    const best = findBestFilled(qBubbles, gray);
+    /** @type {Record<string, number>} */
+    const fills = {};
+    for (const b of qBubbles) {
+      if (b.option) fills[b.option] = measureBubbleFill(b, gray);
+    }
+    confidenceMap[q] = fills;
+    const best = findBestFilled(qBubbles, gray, threshold);
     answers.push(best?.option || '');
   }
 
-  return answers;
+  return { answers, confidenceMap };
 }
 
 /**
@@ -82,9 +93,10 @@ export function detectPhanIAnswers(bubbles, gray, questionCount = 40) {
  * @param {Bubble[]} bubbles
  * @param {OpenCVMat} gray
  * @param {number} [questionCount=8]
+ * @param {number} [threshold]
  * @returns {TrueFalseAnswer[]}
  */
-export function detectPhanIIAnswers(bubbles, gray, questionCount = 8) {
+export function detectPhanIIAnswers(bubbles, gray, questionCount = 8, threshold = DEFAULT_FILL_THRESHOLD) {
   const sectionBubbles = bubbles.filter((b) => b.section === 'section2');
   /** @type {TrueFalseAnswer[]} */
   const answers = [];
@@ -96,15 +108,13 @@ export function detectPhanIIAnswers(bubbles, gray, questionCount = 8) {
 
     for (const subOpt of ['a', 'b', 'c', 'd']) {
       const subBubbles = qBubbles.filter((b) => b.subOption === subOpt);
-      // Find which one is filled more (true or false bubble)
       const trueBubble = subBubbles.find((b) => b.value === true);
       const falseBubble = subBubbles.find((b) => b.value === false);
 
       const trueConf = trueBubble ? measureBubbleFill(trueBubble, gray) : 0;
       const falseConf = falseBubble ? measureBubbleFill(falseBubble, gray) : 0;
 
-      // Only mark if at least one passes threshold
-      if (trueConf > FILL_THRESHOLD || falseConf > FILL_THRESHOLD) {
+      if (trueConf > threshold || falseConf > threshold) {
         answer[subOpt] = trueConf > falseConf;
       }
     }
@@ -125,9 +135,10 @@ const PHAN_III_CHARS_PER_QUESTION = 5;
  * @param {Bubble[]} bubbles
  * @param {OpenCVMat} gray
  * @param {number} [questionCount=6]
+ * @param {number} [threshold]
  * @returns {string[]}
  */
-export function detectPhanIIIAnswers(bubbles, gray, questionCount = 6) {
+export function detectPhanIIIAnswers(bubbles, gray, questionCount = 6, threshold = DEFAULT_FILL_THRESHOLD) {
   const sectionBubbles = bubbles.filter((b) => b.section === 'section3');
   const byQuestion = groupByQuestion(sectionBubbles);
   /** @type {string[]} */
@@ -140,13 +151,12 @@ export function detectPhanIIIAnswers(bubbles, gray, questionCount = 6) {
 
     for (let pos = 0; pos < PHAN_III_CHARS_PER_QUESTION; pos++) {
       const posBubbles = byCharPos[pos] || [];
-      const best = findBestFilled(posBubbles, gray);
+      const best = findBestFilled(posBubbles, gray, threshold);
       if (best?.charValue !== undefined) {
         answer += best.charValue;
       }
     }
 
-    // Trim trailing whitespace/empty positions
     answers.push(answer.trimEnd());
   }
 
@@ -207,12 +217,13 @@ function groupByField(bubbles, fieldName) {
  * Find the bubble with highest fill confidence above threshold.
  * @param {Bubble[]} bubbles
  * @param {OpenCVMat} gray
+ * @param {number} [threshold]
  * @returns {Bubble | null}
  */
-function findBestFilled(bubbles, gray) {
+function findBestFilled(bubbles, gray, threshold = DEFAULT_FILL_THRESHOLD) {
   /** @type {Bubble | null} */
   let best = null;
-  let bestConf = FILL_THRESHOLD;
+  let bestConf = threshold;
 
   for (const bubble of bubbles) {
     const conf = measureBubbleFill(bubble, gray);

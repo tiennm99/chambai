@@ -4,12 +4,15 @@ import { useState, useMemo } from 'react';
 import { calculateScore } from '@/lib/scoring';
 import { calculateClassStatistics } from '@/lib/statistics';
 import StudentDetailModal from './student-detail-modal';
+import ItemAnalysisView from './item-analysis-view';
+import ScoreDistributionChart from './score-distribution-chart';
 
 export default function ResultsPage({ results: rawResults, config, onResultsUpdate, onResultsClear }) {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [sortKey, setSortKey] = useState('studentId');
   const [sortDir, setSortDir] = useState('asc');
   const [filterText, setFilterText] = useState('');
+  const [activeTab, setActiveTab] = useState('results');
 
   // Score all results against current config
   const results = useMemo(() => {
@@ -77,12 +80,16 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <h2 className="text-2xl font-bold text-gray-900">Kết quả chấm điểm</h2>
         <div className="flex-1" />
+        <button onClick={() => window.print()} disabled={results.length === 0}
+          className={`no-print px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            results.length === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-600 text-white hover:bg-gray-700'
+          }`}>In kết quả</button>
         <button onClick={exportToCSV} disabled={results.length === 0}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+          className={`no-print px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
             results.length === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'
           }`}>Xuất CSV</button>
         <button onClick={clearResults} disabled={results.length === 0}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+          className={`no-print px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
             results.length === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-700'
           }`}>Xóa kết quả</button>
       </div>
@@ -96,47 +103,94 @@ export default function ResultsPage({ results: rawResults, config, onResultsUpda
           {/* Statistics */}
           {stats && <StatisticsSummary stats={stats} />}
 
-          {/* Filter */}
-          <div className="mb-4">
-            <input type="text" placeholder="Tìm theo SBD..." value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
-              className="w-64 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <span className="text-sm text-gray-500 ml-3">{sortedResults.length} / {results.length} kết quả</span>
+          {/* Tabs */}
+          <div className="flex gap-1 mb-4 border-b border-gray-200 no-print">
+            {[
+              { key: 'results', label: 'Bảng điểm' },
+              { key: 'analysis', label: 'Phân tích câu hỏi' },
+              { key: 'distribution', label: 'Phân phối điểm' },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === tab.key
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
 
-          {/* Table */}
-          <div className="overflow-x-auto mb-8">
-            <table className="min-w-full border border-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <ThBtn onClick={() => handleSort('studentId')}>SBD{sortArrow('studentId')}</ThBtn>
-                  <Th>Mã đề</Th><Th>Phần I</Th><Th>Phần II</Th><Th>Phần III</Th>
-                  <ThBtn onClick={() => handleSort('total')}>Tổng{sortArrow('total')}</ThBtn>
-                  <ThBtn onClick={() => handleSort('percentage')}>%{sortArrow('percentage')}</ThBtn>
-                  <Th>Chi tiết</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedResults.map((result) => (
-                  <tr key={result.id} className="border-t border-gray-200 hover:bg-gray-50">
-                    <Td>{result.studentId}</Td>
-                    <Td>{result.examCode || '-'}</Td>
-                    <Td>{result.score?.phanI ?? 0}</Td>
-                    <Td>{result.score?.phanII ?? 0}</Td>
-                    <Td>{result.score?.phanIII ?? 0}</Td>
-                    <Td className="font-semibold">{result.score?.total ?? 0}/{result.score?.maxTotal ?? 0}</Td>
-                    <Td><ScoreBadge percentage={result.score?.percentage ?? 0} /></Td>
-                    <Td>
-                      <button onClick={() => setSelectedStudent(result.id)} className="text-blue-600 hover:text-blue-800 text-sm">Xem</button>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/* Results Table */}
+          {activeTab === 'results' && (
+            <>
+              <div className="mb-4 no-print">
+                <input type="text" placeholder="Tìm theo SBD..." value={filterText}
+                  onChange={(e) => setFilterText(e.target.value)}
+                  className="w-64 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <span className="text-sm text-gray-500 ml-3">{sortedResults.length} / {results.length} kết quả</span>
+              </div>
+
+              <div className="overflow-x-auto mb-8">
+                <table className="min-w-full border border-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <ThBtn onClick={() => handleSort('studentId')}>SBD{sortArrow('studentId')}</ThBtn>
+                      <Th>Mã đề</Th><Th>Phần I</Th><Th>Phần II</Th><Th>Phần III</Th>
+                      <ThBtn onClick={() => handleSort('total')}>Tổng{sortArrow('total')}</ThBtn>
+                      <ThBtn onClick={() => handleSort('percentage')}>%{sortArrow('percentage')}</ThBtn>
+                      <Th>Chi tiết</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedResults.map((result) => (
+                      <tr key={result.id} className="border-t border-gray-200 hover:bg-gray-50">
+                        <Td>{result.studentId}</Td>
+                        <Td>{result.examCode || '-'}</Td>
+                        <Td>{result.score?.phanI ?? 0}</Td>
+                        <Td>{result.score?.phanII ?? 0}</Td>
+                        <Td>{result.score?.phanIII ?? 0}</Td>
+                        <Td className="font-semibold">{result.score?.total ?? 0}/{result.score?.maxTotal ?? 0}</Td>
+                        <Td><ScoreBadge percentage={result.score?.percentage ?? 0} /></Td>
+                        <Td>
+                          <button onClick={() => setSelectedStudent(result.id)} className="text-blue-600 hover:text-blue-800 text-sm no-print">Xem</button>
+                        </Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {/* Item Analysis Tab */}
+          {activeTab === 'analysis' && (
+            <div className="mb-8">
+              <ItemAnalysisView results={results} config={config} />
+            </div>
+          )}
+
+          {/* Score Distribution Tab */}
+          {activeTab === 'distribution' && (
+            <div className="mb-8">
+              <ScoreDistributionChart results={results} />
+            </div>
+          )}
 
           {selectedStudent && selectedData && (
-            <StudentDetailModal student={selectedData} testConfig={config} onClose={() => setSelectedStudent(null)} />
+            <StudentDetailModal
+              student={selectedData}
+              testConfig={config}
+              onClose={() => setSelectedStudent(null)}
+              onResultUpdate={(corrected) => {
+                const updated = rawResults.map((r) => r.id === corrected.id ? corrected : r);
+                onResultsUpdate(updated);
+                setSelectedStudent(null);
+              }}
+            />
           )}
         </div>
       )}

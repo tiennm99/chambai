@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import ImageProcessor from './ImageProcessor';
+import ImageProcessorErrorBoundary from './image-processor-error-boundary';
 import { saveDebugImage } from '@/lib/indexed-db-store';
 
 export default function UploadPage({ config, onResultsAdd }) {
@@ -56,6 +57,8 @@ export default function UploadPage({ config, onResultsAdd }) {
       phanI: result.phanI,
       phanII: result.phanII,
       phanIII: result.phanIII,
+      confidenceMap: result.confidenceMap,
+      qualityReport: result.qualityReport,
       processed: true,
       debugImageUrl: result.debugImageUrl,
     };
@@ -188,7 +191,9 @@ export default function UploadPage({ config, onResultsAdd }) {
 
       {/* Image Processor (hidden worker) */}
       {currentIndex >= 0 && currentIndex < selectedImages.length && (
-        <ImageProcessor imageFile={selectedImages[currentIndex]} onProcessingComplete={handleProcessingComplete} />
+        <ImageProcessorErrorBoundary>
+          <ImageProcessor imageFile={selectedImages[currentIndex]} testConfig={config} onProcessingComplete={handleProcessingComplete} />
+        </ImageProcessorErrorBoundary>
       )}
 
       {/* Results Preview */}
@@ -204,6 +209,15 @@ export default function UploadPage({ config, onResultsAdd }) {
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1">
                   Đã xử lý
                 </span>
+                {result.qualityReport && !result.qualityReport.passed && (
+                  <div className="mt-2 space-y-1">
+                    {result.qualityReport.issues.map((issue, i) => (
+                      <p key={i} className="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded">
+                        ⚠ {issue.message}
+                      </p>
+                    ))}
+                  </div>
+                )}
                 {result.debugImageUrl && (
                   <img src={result.debugImageUrl} alt="Debug" className="mt-3 max-w-full h-auto border border-gray-300 rounded" style={{ maxHeight: '400px' }} />
                 )}
