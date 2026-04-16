@@ -18,16 +18,17 @@
  */
 
 // Vietnamese THPT answer sheet proportional layout (2025 format, CV1239/BGDĐT)
-// These ratios are relative to the answer area bounded by corner markers
+// Ratios measured from official template PDF (assets/Bộ GD 2025 - CV1239)
+// Relative to the full sheet content area (outer border or detected rectangle)
 const SHEET_LAYOUT = {
   // Student ID: top-right area, 8 columns x 10 rows (digits 0-9)
-  studentId: { x: 0.58, y: 0.05, w: 0.24, h: 0.20, cols: 8, rows: 10 },
+  studentId: { x: 0.53, y: 0.12, w: 0.27, h: 0.14, cols: 8, rows: 10 },
   // Exam code: right of student ID, 4 columns x 10 rows
-  examCode: { x: 0.82, y: 0.05, w: 0.13, h: 0.20, cols: 4, rows: 10 },
+  examCode: { x: 0.84, y: 0.12, w: 0.13, h: 0.14, cols: 4, rows: 10 },
   // Phần I: multiple choice (A,B,C,D), 4 question columns x 10 rows = 40 questions
-  phanI: { x: 0.03, y: 0.28, w: 0.94, h: 0.27, questionCols: 4, questionsPerCol: 10 },
+  phanI: { x: 0.03, y: 0.30, w: 0.94, h: 0.26, questionCols: 4, questionsPerCol: 10 },
   // Phần II: true/false, 4 question columns x 2 rows (8 questions, each with a,b,c,d sub-options)
-  phanII: { x: 0.03, y: 0.55, w: 0.94, h: 0.17, questions: 8, subOptions: 4 },
+  phanII: { x: 0.03, y: 0.59, w: 0.94, h: 0.10, questions: 8, subOptions: 4 },
   // Phần III: multi-char numerical answers, 6 questions x 5 char positions x 12 rows
   // Row layout per char column: index 0='-', index 1=',', indices 2-11='0'-'9'
   phanIII: { x: 0.03, y: 0.72, w: 0.94, h: 0.26, questions: 6, charsPerQuestion: 5, charRows: 12 },

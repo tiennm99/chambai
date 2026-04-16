@@ -84,17 +84,17 @@ export function computeAdaptiveThreshold(bubbles, gray) {
 }
 
 /**
- * Check how filled a bubble region is by analyzing pixel intensity.
- * Returns a confidence score 0.0 (empty) to 1.0 (fully filled).
+ * Check how filled a bubble region is using binary thresholding + pixel counting.
+ * More robust than mean intensity against uneven lighting (phone flash, shadows).
+ * Returns 0.0 (empty) to 1.0 (fully filled).
  * @param {{ x: number, y: number, width: number, height: number }} bubble
  * @param {OpenCVMat} gray - Grayscale image matrix
  * @returns {number}
  */
 export function measureBubbleFill(bubble, gray) {
-  const cv = window.cv;
+  const cv = (typeof self !== 'undefined' && self.cv) || window.cv;
 
   try {
-    // Clamp ROI to image bounds
     const x = Math.max(0, Math.round(bubble.x));
     const y = Math.max(0, Math.round(bubble.y));
     const w = Math.min(bubble.width, gray.cols - x);
@@ -105,12 +105,17 @@ export function measureBubbleFill(bubble, gray) {
     const rect = new cv.Rect(x, y, w, h);
     const roi = gray.roi(rect);
 
-    // Mean intensity: lower = darker = more filled
-    const meanValue = cv.mean(roi);
-    const fillConfidence = 1.0 - meanValue[0] / 255.0;
+    // Otsu threshold adapts to local lighting; BINARY_INV makes dark pixels = white (nonzero)
+    const binary = new cv.Mat();
+    cv.threshold(roi, binary, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+
+    const darkPixels = cv.countNonZero(binary);
+    const totalPixels = w * h;
 
     roi.delete();
-    return fillConfidence;
+    binary.delete();
+
+    return totalPixels > 0 ? darkPixels / totalPixels : 0;
   } catch {
     return 0;
   }

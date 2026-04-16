@@ -65,7 +65,7 @@ export function checkImageQuality(gray, markers, imageWidth, imageHeight) {
   if (markersFound < 4) {
     issues.push({
       type: 'markers',
-      message: `Chỉ tìm thấy ${markersFound}/4 dấu góc định vị`,
+      message: `Không tìm thấy viền phiếu trả lời (tìm thấy ${markersFound}/4 góc)`,
     });
   }
 

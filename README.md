@@ -114,8 +114,9 @@ src/
 └── lib/
     ├── detection-pipeline.js   # Full OMR pipeline (extracted, pure function)
     ├── image-preprocessing.js  # Grayscale, thresholding, resize, adaptive threshold
-    ├── image-quality-check.js  # Blur/resolution/marker validation
-    ├── marker-detection.js     # Corner marker detection for alignment
+    ├── image-quality-check.js  # Blur/resolution/sheet boundary validation
+    ├── marker-detection.js     # Contour-based sheet detection + perspective correction
+    ├── corner-marker-fallback.js # Fallback corner marker detection (legacy)
     ├── bubble-grid-generator.js # Vietnamese THPT answer sheet layout
     ├── answer-detection.js     # Student ID, exam code, answer detection
     ├── debug-visualization.js  # Debug overlay drawing
@@ -136,21 +137,22 @@ The application uses OpenCV.js for:
 - Converting images to grayscale and adaptive thresholding
 - Auto-resizing large images (>2000px width) for reliable processing
 - Adaptive fill threshold computation from empty bubble baseline
-- Image quality validation (blur, resolution, corner markers)
-- Corner marker detection for sheet alignment
-- Contour-based bubble detection (not HoughCircles)
-- Region of Interest (ROI) extraction and fill measurement
+- Image quality validation (blur, resolution, sheet boundary)
+- Contour-based sheet boundary detection (largest rectangle) with corner marker fallback
+- Perspective correction always applied when sheet boundary detected
+- Binary threshold + pixel counting for robust bubble fill measurement
+- Region of Interest (ROI) extraction with Otsu thresholding
 - Debug visualization with color-coded overlay
 
 The detection pipeline follows the Vietnamese THPT answer sheet layout (Công văn 1239/BGDĐT 2025):
 1. Resize image to max 2000px width
 2. Preprocess (grayscale + Gaussian blur + adaptive threshold)
-3. Detect 4 corner markers for alignment reference
-4. Validate image quality (blur, resolution, markers)
-5. Apply perspective correction if needed
+3. Detect sheet boundary via contour detection (fallback: corner markers)
+4. Validate image quality (blur, resolution, boundary detection)
+5. Apply perspective correction (always when 4 corners detected)
 6. Generate bubble grid using proportional layout ratios
 7. Compute adaptive fill threshold from empty bubble regions
-8. Measure bubble fill intensity for answer detection
+8. Measure bubble fill via binary threshold + dark pixel count
 9. Return results with confidence map for manual review
 
 ## License

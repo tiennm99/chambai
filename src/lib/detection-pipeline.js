@@ -1,6 +1,6 @@
 // Full OMR detection pipeline — pure function, no React/DOM deps (except cv global)
 import { preprocessForBubbleDetection, computeAdaptiveThreshold } from './image-preprocessing';
-import { detectCornerMarkers, applyPerspectiveCorrection } from './marker-detection';
+import { detectSheetContour, applyPerspectiveCorrection } from './marker-detection';
 import { generateBubbleGrid } from './bubble-grid-generator';
 import {
   detectStudentId,
@@ -25,7 +25,7 @@ export function runDetectionPipeline(imageData, originalCanvas, testConfig) {
 
   const src = cv.matFromImageData(imageData);
   const { gray, thresh } = preprocessForBubbleDetection(src);
-  const markers = detectCornerMarkers(thresh, imageData.width, imageData.height);
+  const markers = detectSheetContour(thresh, imageData.width, imageData.height);
 
   const qualityReport = checkImageQuality(gray, markers, imageData.width, imageData.height);
 
