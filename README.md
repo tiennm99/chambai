@@ -51,12 +51,12 @@ A Next.js web application for automatically scoring Vietnamese multiple choice t
 
 1. **Install dependencies**:
    ```bash
-   npm install
+   pnpm install
    ```
 
 2. **Run the development server**:
    ```bash
-   npm run dev
+   pnpm dev
    ```
 
 3. **Open your browser** and navigate to `http://localhost:3000`
