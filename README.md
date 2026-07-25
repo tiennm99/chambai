@@ -1,160 +1,160 @@
-# Vietnamese Multiple Choice Test Scoring Web Application
+# Ứng dụng web chấm điểm bài thi trắc nghiệm
 
-A Next.js web application for automatically scoring Vietnamese multiple choice tests using OpenCV.js for image recognition.
+Ứng dụng web Next.js tự động chấm điểm bài thi trắc nghiệm theo định dạng THPT Việt Nam, sử dụng OpenCV.js để nhận dạng ảnh.
 
-## Features
+## Tính năng
 
-- **Test Configuration**: Set up answer keys for three types of questions:
-  - Phần I: Multiple choice (A, B, C, D)
-  - Phần II: True/False questions with sub-parts
-  - Phần III: Numerical answers
+- **Cấu hình đề thi**: Thiết lập đáp án cho ba dạng câu hỏi:
+  - Phần I: Trắc nghiệm nhiều phương án lựa chọn (A, B, C, D)
+  - Phần II: Trắc nghiệm đúng/sai, có các ý nhỏ
+  - Phần III: Trắc nghiệm trả lời ngắn (dạng số)
 
-- **Image Processing**: 
-  - Drag & drop image upload
-  - Automatic image resize for large photos (12MP+ phone cameras)
-  - Adaptive fill threshold (per-image baseline from empty bubbles)
-  - Image quality pre-check (blur detection, resolution, corner markers)
-  - Bubble detection using OpenCV.js
-  - Student ID and exam code recognition
-  - Answer recognition for all question types
+- **Xử lý ảnh**:
+  - Tải ảnh lên bằng cách kéo và thả
+  - Tự động giảm kích thước với ảnh lớn (ảnh từ điện thoại 12MP trở lên)
+  - Ngưỡng tô thích ứng (lấy mốc từ các ô trống của chính ảnh đó)
+  - Kiểm tra chất lượng ảnh trước khi xử lý (phát hiện ảnh mờ, độ phân giải, dấu định vị góc)
+  - Nhận dạng ô tô bằng OpenCV.js
+  - Nhận dạng số báo danh và mã đề
+  - Nhận dạng đáp án cho cả ba dạng câu hỏi
 
-- **Manual Correction**:
-  - Click-to-toggle answer correction in editable grid
-  - Low-confidence detections highlighted for review
-  - Live score preview during correction
+- **Sửa đáp án thủ công**:
+  - Nhấp để đổi đáp án ngay trên bảng có thể chỉnh sửa
+  - Làm nổi bật những đáp án có độ tin cậy thấp để rà soát
+  - Xem trước điểm ngay trong lúc sửa
 
-- **Session Management**:
-  - Create, list, delete exam sessions
-  - Session-based data isolation (config + results per session)
-  - Session export/import (.chambai.json files)
-  - Automatic localStorage-to-IndexedDB migration
+- **Quản lý phiên**:
+  - Tạo, xem danh sách, xóa phiên chấm thi
+  - Dữ liệu tách biệt theo từng phiên (cấu hình và kết quả riêng cho mỗi phiên)
+  - Xuất/nhập phiên (tệp `.chambai.json`)
+  - Tự động chuyển dữ liệu từ localStorage sang IndexedDB
 
-- **Results & Analytics**:
-  - Automatic scoring calculation
-  - Per-question item analysis (correct%, wrong%, blank%, difficulty)
-  - Score distribution histogram with configurable buckets
-  - Class statistics (mean, median, min, max)
-  - Detailed student results view
-  - CSV export functionality
-  - Print-optimized layout
-  - Data persistence using IndexedDB
+- **Kết quả và phân tích**:
+  - Tự động tính điểm
+  - Phân tích từng câu hỏi (tỷ lệ đúng, tỷ lệ sai, tỷ lệ bỏ trống, độ khó)
+  - Biểu đồ phân phối điểm với số khoảng điểm tùy chỉnh
+  - Thống kê toàn lớp (trung bình, trung vị, thấp nhất, cao nhất)
+  - Xem chi tiết kết quả của từng học sinh
+  - Xuất kết quả ra tệp CSV
+  - Bố cục tối ưu cho việc in
+  - Lưu dữ liệu bằng IndexedDB
 
-## Tech Stack
+## Công nghệ sử dụng
 
-- **Frontend**: Next.js 15
-- **Styling**: Tailwind CSS
-- **Image Processing**: OpenCV.js
-- **Data Export**: CSV generation, JSON session export
-- **Storage**: IndexedDB (sessions, results, debug images)
+- **Giao diện**: Next.js 15
+- **Kiểu dáng**: Tailwind CSS
+- **Xử lý ảnh**: OpenCV.js
+- **Xuất dữ liệu**: Tạo tệp CSV, xuất phiên dạng JSON
+- **Lưu trữ**: IndexedDB (phiên, kết quả, ảnh gỡ lỗi)
 
-## Getting Started
+## Bắt đầu
 
-1. **Install dependencies**:
+1. **Cài đặt các gói phụ thuộc**:
    ```bash
    pnpm install
    ```
 
-2. **Run the development server**:
+2. **Chạy máy chủ phát triển**:
    ```bash
    pnpm dev
    ```
 
-3. **Open your browser** and navigate to `http://localhost:3000`
+3. **Mở trình duyệt** và truy cập `http://localhost:3000`
 
-## Usage
+## Hướng dẫn sử dụng
 
-### 1. Create a Session
-- Click "Tạo phiên mới" on the landing page
-- Name your exam session
+### 1. Tạo phiên
+- Nhấn "Tạo phiên mới" ở trang chủ
+- Đặt tên cho phiên chấm thi
 
-### 2. Configure Test (Cấu hình đề thi)
-- Set the number of questions for each section
-- Input correct answers (manual, paste from Excel, or CSV import)
-- Save the configuration
+### 2. Cấu hình đề thi
+- Nhập số câu hỏi cho từng phần
+- Nhập đáp án đúng (nhập tay, dán từ Excel, hoặc nhập từ tệp CSV)
+- Lưu cấu hình
 
-### 3. Upload and Process Images (Tải và xử lý ảnh)
-- Drag and drop or select image files (JPG, PNG)
-- Click "Xử lý ảnh" to process the images
-- Review quality warnings for blurry/low-resolution images
-- Wait for automatic recognition to complete
+### 3. Tải và xử lý ảnh
+- Kéo và thả hoặc chọn tệp ảnh (JPG, PNG)
+- Nhấn "Xử lý ảnh" để bắt đầu xử lý
+- Xem các cảnh báo chất lượng với ảnh bị mờ hoặc có độ phân giải thấp
+- Chờ quá trình nhận dạng tự động hoàn tất
 
-### 4. Review and Correct (Sửa đáp án)
-- Click "Xem" on any student result
-- Click "Sửa đáp án" to manually correct detected answers
-- Low-confidence detections are highlighted in yellow
+### 4. Rà soát và sửa đáp án
+- Nhấn "Xem" ở kết quả của học sinh cần kiểm tra
+- Nhấn "Sửa đáp án" để sửa thủ công các đáp án đã nhận dạng
+- Những đáp án có độ tin cậy thấp được làm nổi bật bằng màu vàng
 
-### 5. View Results (Kết quả)
-- Review scores in the results table
-- Switch to "Phân tích câu hỏi" for per-question analysis
-- Switch to "Phân phối điểm" for score distribution
-- Export results to CSV or print
+### 5. Xem kết quả
+- Xem điểm trong bảng kết quả
+- Chuyển sang "Phân tích câu hỏi" để xem phân tích từng câu
+- Chuyển sang "Phân phối điểm" để xem phân phối điểm
+- Xuất kết quả ra tệp CSV hoặc in
 
-## Project Structure
+## Cấu trúc dự án
 
 ```
 src/
 ├── app/
-│   ├── layout.jsx              # Root layout with OpenCV.js integration
-│   ├── page.jsx                # Main app: session management + page routing
-│   └── globals.css             # Global styles + print CSS
+│   ├── layout.jsx              # Layout gốc, tích hợp OpenCV.js
+│   ├── page.jsx                # Ứng dụng chính: quản lý phiên + điều hướng trang
+│   └── globals.css             # Kiểu dáng toàn cục + CSS cho bản in
 ├── components/
-│   ├── Navigation.jsx          # Navigation between pages
-│   ├── ConfigurationPage.jsx   # Test config + scoring + CSV import
-│   ├── UploadPage.jsx          # Image upload with progress + quality warnings
-│   ├── ResultsPage.jsx         # Results table + tabs (analysis, distribution)
-│   ├── ImageProcessor.jsx      # Thin wrapper calling detection pipeline
-│   ├── session-list.jsx        # Session list with create/delete/export/import
-│   ├── session-header.jsx      # Active session header bar
-│   ├── student-detail-modal.jsx # Per-student detail + correction button
-│   ├── manual-correction-modal.jsx # Editable answer grid with live scoring
-│   ├── item-analysis-view.jsx  # Per-question analysis table
-│   ├── score-distribution-chart.jsx # Histogram with mean/median
-│   ├── phan-i-answer-grid.jsx  # Keyboard-navigable answer input grid
-│   └── image-processor-error-boundary.jsx # Error boundary for pipeline
+│   ├── Navigation.jsx          # Điều hướng giữa các trang
+│   ├── ConfigurationPage.jsx   # Cấu hình đề thi + cách tính điểm + nhập từ CSV
+│   ├── UploadPage.jsx          # Tải ảnh lên, kèm tiến trình + cảnh báo chất lượng
+│   ├── ResultsPage.jsx         # Bảng kết quả + các tab (phân tích, phân phối)
+│   ├── ImageProcessor.jsx      # Lớp bọc mỏng, gọi vào luồng nhận dạng
+│   ├── session-list.jsx        # Danh sách phiên, kèm tạo/xóa/xuất/nhập
+│   ├── session-header.jsx      # Thanh tiêu đề của phiên đang mở
+│   ├── student-detail-modal.jsx # Chi tiết từng học sinh + nút sửa đáp án
+│   ├── manual-correction-modal.jsx # Bảng đáp án chỉnh sửa được, tính điểm trực tiếp
+│   ├── item-analysis-view.jsx  # Bảng phân tích từng câu hỏi
+│   ├── score-distribution-chart.jsx # Biểu đồ phân phối kèm trung bình/trung vị
+│   ├── phan-i-answer-grid.jsx  # Bảng nhập đáp án, điều hướng được bằng bàn phím
+│   └── image-processor-error-boundary.jsx # Ranh giới lỗi cho luồng nhận dạng
 └── lib/
-    ├── detection-pipeline.js   # Full OMR pipeline (extracted, pure function)
-    ├── image-preprocessing.js  # Grayscale, thresholding, resize, adaptive threshold
-    ├── image-quality-check.js  # Blur/resolution/sheet boundary validation
-    ├── marker-detection.js     # Contour-based sheet detection + perspective correction
-    ├── corner-marker-fallback.js # Fallback corner marker detection (legacy)
-    ├── bubble-grid-generator.js # Vietnamese THPT answer sheet layout
-    ├── answer-detection.js     # Student ID, exam code, answer detection
-    ├── debug-visualization.js  # Debug overlay drawing
-    ├── scoring.js              # Weighted scoring (Phần I/II/III)
-    ├── statistics.js           # Class-level statistics
-    ├── item-analysis.js        # Per-question item analysis
-    ├── indexed-db-store.js     # Core IndexedDB (openDB, debug images)
-    ├── indexed-db-sessions.js  # Session CRUD
-    ├── indexed-db-results.js   # Results CRUD (session-scoped)
-    ├── local-storage-migration.js # One-time localStorage migration
-    ├── session-export-import.js # Export/import sessions as JSON
-    └── types.js                # JSDoc type definitions
+    ├── detection-pipeline.js   # Toàn bộ luồng OMR (đã tách riêng, hàm thuần)
+    ├── image-preprocessing.js  # Ảnh xám, phân ngưỡng, đổi kích thước, ngưỡng thích ứng
+    ├── image-quality-check.js  # Kiểm tra độ mờ/độ phân giải/biên phiếu
+    ├── marker-detection.js     # Phát hiện phiếu theo đường biên + hiệu chỉnh phối cảnh
+    ├── corner-marker-fallback.js # Phương án dự phòng: phát hiện dấu định vị góc (cũ)
+    ├── bubble-grid-generator.js # Bố cục phiếu trả lời THPT Việt Nam
+    ├── answer-detection.js     # Nhận dạng số báo danh, mã đề, đáp án
+    ├── debug-visualization.js  # Vẽ lớp phủ gỡ lỗi
+    ├── scoring.js              # Tính điểm có trọng số (Phần I/II/III)
+    ├── statistics.js           # Thống kê ở mức toàn lớp
+    ├── item-analysis.js        # Phân tích từng câu hỏi
+    ├── indexed-db-store.js     # IndexedDB lõi (openDB, ảnh gỡ lỗi)
+    ├── indexed-db-sessions.js  # Thao tác CRUD với phiên
+    ├── indexed-db-results.js   # Thao tác CRUD với kết quả (theo từng phiên)
+    ├── local-storage-migration.js # Chuyển dữ liệu từ localStorage, chạy một lần
+    ├── session-export-import.js # Xuất/nhập phiên dưới dạng JSON
+    └── types.js                # Định nghĩa kiểu bằng JSDoc
 ```
 
-## Image Processing
+## Xử lý ảnh
 
-The application uses OpenCV.js for:
-- Converting images to grayscale and adaptive thresholding
-- Auto-resizing large images (>2000px width) for reliable processing
-- Adaptive fill threshold computation from empty bubble baseline
-- Image quality validation (blur, resolution, sheet boundary)
-- Contour-based sheet boundary detection (largest rectangle) with corner marker fallback
-- Perspective correction always applied when sheet boundary detected
-- Binary threshold + pixel counting for robust bubble fill measurement
-- Region of Interest (ROI) extraction with Otsu thresholding
-- Debug visualization with color-coded overlay
+Ứng dụng dùng OpenCV.js để:
+- Chuyển ảnh sang ảnh xám và phân ngưỡng thích ứng
+- Tự động giảm kích thước ảnh lớn (rộng hơn 2000px) để xử lý ổn định hơn
+- Tính ngưỡng tô thích ứng dựa trên mốc từ các ô trống
+- Kiểm tra chất lượng ảnh (độ mờ, độ phân giải, biên phiếu)
+- Phát hiện biên phiếu theo đường biên (hình chữ nhật lớn nhất), dự phòng bằng dấu định vị góc
+- Luôn hiệu chỉnh phối cảnh khi đã phát hiện được biên phiếu
+- Phân ngưỡng nhị phân + đếm điểm ảnh để đo mức độ tô của ô một cách đáng tin cậy
+- Trích xuất vùng quan tâm (ROI) kèm phân ngưỡng Otsu
+- Trực quan hóa gỡ lỗi bằng lớp phủ có mã màu
 
-The detection pipeline follows the Vietnamese THPT answer sheet layout (Công văn 1239/BGDĐT 2025):
-1. Resize image to max 2000px width
-2. Preprocess (grayscale + Gaussian blur + adaptive threshold)
-3. Detect sheet boundary via contour detection (fallback: corner markers)
-4. Validate image quality (blur, resolution, boundary detection)
-5. Apply perspective correction (always when 4 corners detected)
-6. Generate bubble grid using proportional layout ratios
-7. Compute adaptive fill threshold from empty bubble regions
-8. Measure bubble fill via binary threshold + dark pixel count
-9. Return results with confidence map for manual review
+Luồng nhận dạng tuân theo bố cục phiếu trả lời THPT Việt Nam (Công văn 1239/BGDĐT 2025):
+1. Giảm kích thước ảnh về tối đa 2000px chiều rộng
+2. Tiền xử lý (ảnh xám + làm mờ Gauss + phân ngưỡng thích ứng)
+3. Phát hiện biên phiếu bằng cách tìm đường biên (dự phòng: dấu định vị góc)
+4. Kiểm tra chất lượng ảnh (độ mờ, độ phân giải, khả năng phát hiện biên)
+5. Hiệu chỉnh phối cảnh (luôn thực hiện khi phát hiện đủ 4 góc)
+6. Sinh lưới ô tô theo tỷ lệ bố cục tương ứng
+7. Tính ngưỡng tô thích ứng từ các vùng ô còn trống
+8. Đo mức độ tô của ô bằng phân ngưỡng nhị phân + đếm điểm ảnh tối
+9. Trả về kết quả kèm bản đồ độ tin cậy để rà soát thủ công
 
-## License
+## Giấy phép
 
-MIT License
+Giấy phép MIT
