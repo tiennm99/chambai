@@ -51,12 +51,12 @@
 
 1. **Cài đặt các gói phụ thuộc**:
    ```bash
-   pnpm install
+   npm install
    ```
 
 2. **Chạy máy chủ phát triển**:
    ```bash
-   pnpm dev
+   npm run dev
    ```
 
 3. **Mở trình duyệt** và truy cập `http://localhost:3000`
